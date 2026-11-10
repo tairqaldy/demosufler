@@ -366,9 +366,30 @@ final class AppModel: ObservableObject {
 
     /// Screen recording can only be switched on by hand in System Settings, followed by a restart.
     func askScreen() {
+        let firstTime = !screenAsked
         screenAsked = true
-        CGRequestScreenCaptureAccess()
-        openPrivacySettings("Privacy_ScreenCapture")
+        let request = {
+            CGRequestScreenCaptureAccess()
+            self.openPrivacySettings("Privacy_ScreenCapture")
+        }
+        guard firstTime, !screenAccess, let bundle = Bundle.main.bundleIdentifier else {
+            request()
+            return
+        }
+        // Every build of the app has its own signature, and macOS ties the permission to it.
+        // After an update the list in Settings still holds the entry of the previous build:
+        // it looks switched on, the new build has no access, and macOS shows no prompt because
+        // an entry already exists. Clearing our entry first makes macOS ask again from scratch.
+        DispatchQueue.global(qos: .userInitiated).async {
+            let reset = Process()
+            reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            reset.arguments = ["reset", "ScreenCapture", bundle]
+            reset.standardOutput = FileHandle.nullDevice
+            reset.standardError = FileHandle.nullDevice
+            try? reset.run()
+            reset.waitUntilExit()
+            DispatchQueue.main.async(execute: request)
+        }
     }
 
     func relaunch() {

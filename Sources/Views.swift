@@ -252,8 +252,8 @@ struct SetupView: View {
     private var screenDetail: String {
         if model.screenAccess { return tr("The prompter itself is never in the recording", "Панель суфлера в запись не попадает") }
         if model.screenAsked {
-            return tr("Turn demosufler on in the list (if it is on, toggle it) and restart",
-                      "Включи demosufler в списке (если уже включён, выключи и включи) и перезапусти")
+            return tr("Turn demosufler on in the list, then press Restart",
+                      "Включи demosufler в списке, потом нажми «Перезапустить»")
         }
         return tr("Only for the Screen, Both and Launch modes", "Нужно только для режимов «Экран», «Оба» и «Ролик»")
     }
