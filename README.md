@@ -1,84 +1,114 @@
 # demosufler
 
-Телесуфлер для macOS. Чёрная панель с текстом висит под камерой макбука, а приложение пишет камеру, экран
-или оба сразу. Панель остаётся поверх всех окон на любом рабочем столе и не попадает в запись экрана.
+A teleprompter for macOS. A black panel sits under the MacBook camera and scrolls your script while the
+app records the camera, the screen, or both. The panel stays above every window on every desktop and
+never shows up in the recording.
 
-Скачать: <https://github.com/tairqaldy/demosufler/releases/latest/download/demosufler.dmg>
-(macOS 15 и новее, Apple silicon и Intel).
+Download: <https://github.com/tairqaldy/demosufler/releases/latest/download/demosufler.dmg>
+(macOS 15 or newer, Apple silicon and Intel). The interface is in English, Russian can be switched on
+from the first screen or later from the panel.
 
-## Установка
+Русский: demosufler — телесуфлер для macOS. Текст едет под камерой, приложение пишет камеру, экран или
+оба сразу, а в режиме «Ролик» само собирает готовое видео. Язык интерфейса переключается на панели.
 
-Проще всего одной командой в Терминале: скачает последнюю версию в «Программы» и запустит её без
-предупреждений macOS.
+## Install
+
+One command in Terminal downloads the latest version into Applications and starts it, without the
+macOS warning about an unknown developer:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/tairqaldy/demosufler/main/install.sh | bash
 ```
 
-Или вручную:
+Or by hand:
 
-1. Открой `demosufler.dmg` и перетащи demosufler в «Программы».
-2. Запусти. macOS скажет, что не может проверить разработчика: приложение не заверено у Apple.
-3. «Системные настройки → Конфиденциальность и безопасность», внизу нажми «Всё равно открыть».
-4. Дальше панель сама покажет, какие разрешения нужны: камера и микрофон одной кнопкой, запись экрана
-   через Настройки и кнопку «Перезапустить».
+1. Open `demosufler.dmg` and drag demosufler to Applications.
+2. Start it. macOS says it cannot check the developer, because the app is not notarized by Apple.
+3. Open System Settings → Privacy & Security and press "Open Anyway" at the bottom.
+4. The panel then walks you through the permissions: camera and microphone with one button, screen
+   recording through System Settings and a Restart button.
 
-Вместо шагов 2 и 3 можно выполнить в Терминале:
+## Using it
 
-```bash
-xattr -dr com.apple.quarantine /Applications/demosufler.app
-```
+- **Mode** (left): `Camera` writes one file, `Both` writes camera and screen as two files in parallel,
+  `Screen` writes the screen only, `Launch` writes the screen and builds a finished video (see below).
+- **Record** (or ⌘R): a three second countdown, then recording and scrolling from the top. Press again
+  to stop.
+- **Speed** shows how long the whole text takes. The ↑ and ↓ keys change it while you read.
+- **Transparency** fades the background of the panel, the text stays bright.
+- **Space** pauses the scroll, the trackpad moves the text by hand.
+- **Pencil** opens the text for editing. Lines in `[brackets]` and lines starting with `#` are dimmed
+  cues.
+- Files land in `~/Movies/demosufler/` (`…_camera.mov`, `…_screen.mov`, `…_launch.mp4`).
+- The panel has no Dock icon. Quit it with the × on the panel, from its menu bar icon, or with ⌘Q.
+- Shortcuts work while the panel was the last thing you clicked.
 
-## Как пользоваться
+### Launch mode
 
-- **Режим** (слева): `Камера` пишет один файл, `Оба` пишет камеру и экран двумя файлами параллельно,
-  `Экран` пишет только экран. Микрофон пишется в каждый файл, по звуку их легко свести в монтаже.
-- **Запись** (или ⌘R): отсчёт 3 секунды, потом запись и прокрутка с начала текста. Вторым нажатием стоп.
-- **Скорость**: рядом показано, за сколько прокрутится весь текст. Стрелки ↑ ↓ меняют скорость на ходу.
-- **Прозрачность** делает фон панели прозрачным, текст остаётся ярким.
-- **Пробел** ставит прокрутку на паузу, тачпадом можно подвинуть текст вручную.
-- **Карандаш** открывает текст для правки. Строки в `[скобках]` и строки с `#` в начале показываются серым
-  как подсказки.
-- Файлы лежат в `~/Movies/demosufler/` (`…_camera.mov`, `…_screen.mov`).
-- Панель можно перетащить за пустое место и растянуть за край.
-- Иконки в Dock нет: приложение живёт только панелью. Закрывается крестиком на панели или ⌘Q.
-- Горячие клавиши работают, пока последний клик был по панели. Кликнул в другое окно, и пробел уходит туда.
+Record the screen as usual. When you press Stop the app renders an `.mp4` by itself: the recording sits
+on a clean background with rounded corners and a shadow, the view zooms in on your clicks and follows
+the pointer, every click leaves a ripple, and the camera can sit in the corner as a round bubble. The
+raw files stay next to the result.
 
-## Обновления
+### Sound
 
-При запуске приложение спрашивает у GitHub последний релиз этого репозитория. Если версия новее, внизу
-панели появляется полоска «Вышла версия …» с кнопкой «Обновить»: приложение скачивает `demosufler.zip`
-из релиза, проверяет подпись, заменяет само себя и перезапускается.
+The microphone is opened only for a recording, starting with the countdown. If the system input is a
+pair of Bluetooth headphones the app records from the Mac's own microphone instead, because opening a
+Bluetooth microphone drops the headphones into low quality "call" sound.
 
-Подпись локальная (без платного аккаунта разработчика Apple), у каждой сборки она своя. Поэтому после
-обновления macOS заново спрашивает камеру и микрофон, а запись экрана нужно включить в настройках ещё раз.
+## Updates
 
-## Сборка и выпуск
+On launch the app asks GitHub for the latest release of this repository. If it is newer, a bar appears
+at the bottom of the panel with an Update button: the app downloads `demosufler.zip` from the release,
+checks its signature, replaces itself and restarts.
 
-Нужны только Command Line Tools (`xcode-select --install`), Xcode не нужен.
+The app is signed locally (there is no paid Apple developer account), so every build has its own
+signature. After an update macOS asks for camera and microphone again, and screen recording has to be
+switched on once more. The panel shows what to press.
+
+## Building
+
+Only the Command Line Tools are needed (`xcode-select --install`), not Xcode.
 
 ```bash
 ./build.sh
 ```
 
-собирает `build/demosufler.app`. Чтобы выпустить обновление:
+builds `build/demosufler.app`. To publish an update:
 
-1. Поднять номер в файле `VERSION` (например, `1.0.1`) и закоммитить изменения.
-2. Запустить `./release.sh`. Скрипт соберёт приложение, упакует `dist/demosufler.zip` и
-   `dist/demosufler.dmg`, запушит ветку и создаст релиз `v<версия>` через `gh`.
+1. Raise the number in `VERSION` and commit.
+2. Run `./release.sh`. It builds the app, packs `dist/demosufler.zip` and `dist/demosufler.dmg`, pushes
+   the branch and creates the release `v<version>` with `gh`.
 
-`./release.sh --no-publish` только собирает `dist/` и ничего не отправляет.
+`./release.sh --no-publish` only builds `dist/`.
 
-Лендинг лежит в `landing/index.html`, это один статичный файл.
+### Tests and the product video
 
-## Что внутри
+`./tools/dev.sh` builds `build/demosufler-dev`, the same code as a plain binary with a few commands:
 
-| Файл | Что делает |
+```bash
+./build/demosufler-dev --selftest /tmp/demosufler-test
+```
+
+records the screen for a few seconds with the pointer tracker running, renders a launch video from it
+and checks the result. `--probe <file>` prints the tracks of a video, `--frame <file> <seconds> <png>`
+saves one frame, `--render` runs the launch renderer on an existing recording.
+
+`python3 tools/demo/make_demo.py <folder>` makes the video on the landing page: the app plays a scripted
+timeline on a clean backdrop, hidden behind the desktop picture, records only its own windows and
+renders the result with the Launch renderer. The narration lines are in `tools/demo/narration.txt`.
+
+## Layout
+
+| File | What it does |
 |---|---|
-| `Sources/App.swift` | панель поверх всех окон и рабочих столов, скрытая от записи, горячие клавиши |
-| `Sources/Model.swift` | состояние, прокрутка, отсчёт, старт и стоп записи |
-| `Sources/Recorder.swift` | камера через AVFoundation, экран через ScreenCaptureKit |
-| `Sources/Updater.swift` | проверка релиза на GitHub и замена приложения |
-| `Sources/Views.swift` | интерфейс на SwiftUI |
-| `Sources/Config.swift` | адрес репозитория с обновлениями |
-| `tools/make_icon.sh` | перерисовывает иконку |
+| `Sources/App.swift` | the panel above all windows, hidden from capture; shortcuts; menu bar icon; watchdog |
+| `Sources/Model.swift` | state, scrolling, countdown, starting and stopping recordings |
+| `Sources/Recorder.swift` | camera through AVFoundation, screen through ScreenCaptureKit, microphone choice |
+| `Sources/CursorTrack.swift` | pointer positions and clicks during a Launch recording |
+| `Sources/LaunchRenderer.swift` | zooms, background, ripples, camera bubble, writing the `.mp4` |
+| `Sources/Updater.swift` | GitHub release check and self-replacement |
+| `Sources/Views.swift` | the interface (SwiftUI, the prompter text itself is drawn with AppKit) |
+| `Sources/L10n.swift` | English and Russian strings |
+| `Sources/Demo.swift`, `Sources/Tools.swift` | scripted demo and command line helpers |
+| `landing/` | the landing page, one static file plus the video |

@@ -2,14 +2,14 @@ import AVFoundation
 import AppKit
 import SwiftUI
 
-// MARK: - Окно целиком
+// MARK: - Whole panel
 
 struct RootView: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
         HStack(spacing: 0) {
-            LeftColumn().frame(width: 196)
+            LeftColumn().frame(width: 204)
             separator
             center
             separator
@@ -40,7 +40,7 @@ struct RootView: View {
                     .foregroundStyle(Color.white)
                     .scrollContentBackground(.hidden)
             } else {
-                PrompterView(scroller: model.scroller)
+                PrompterView()
                 if case .countdown(let n) = model.phase {
                     Color.black.opacity(0.7)
                     Text("\(n)")
@@ -50,54 +50,135 @@ struct RootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .demoAnchor("text")
         .overlay(alignment: .bottom) {
             if model.phase == .idle { UpdateBar() }
         }
     }
 }
 
-// MARK: - Суфлер
+// MARK: - Prompter
 
-struct PrompterView: View {
-    @EnvironmentObject var model: AppModel
-    @ObservedObject var scroller: Scroller
+/// Draws only the visible lines of the script and redraws on every scroll step.
+/// This is plain AppKit on purpose: scrolling never goes through SwiftUI layout.
+final class PrompterNSView: NSView {
+    private let storage = NSTextStorage()
+    private let manager = NSLayoutManager()
+    private let container = NSTextContainer()
+    private var signature = ""
+    private var lastHeight: CGFloat = -1
 
-    var body: some View {
-        let size = CGFloat(model.fontSize)
-        // На прозрачном фоне тексту нужна тень, иначе на светлом окне его не видно.
-        let glassy = model.transparency > 0.05
-        GeometryReader { geo in
-            VStack(alignment: .leading, spacing: size * 0.6) {
-                ForEach(model.paragraphs) { p in
-                    Text(p.text)
-                        .font(.system(size: p.isCue ? size * 0.6 : size, weight: p.isCue ? .regular : .medium))
-                        .foregroundStyle(Color.white.opacity(p.isCue ? 0.45 : 1))
-                        .lineSpacing(size * 0.16)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .frame(width: geo.size.width, alignment: .leading)
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                model.contentHeight = height
-            }
-            .shadow(color: Color.black.opacity(glassy ? 0.95 : 0), radius: 2.5)
-            .offset(y: -scroller.offset)
-            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+    var onHeight: ((CGFloat) -> Void)?
+    var offset: CGFloat = 0 {
+        didSet { if offset != oldValue { needsDisplay = true } }
+    }
+
+    override var isFlipped: Bool { true }
+
+    init() {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        container.lineFragmentPadding = 0
+        manager.addTextContainer(container)
+        storage.addLayoutManager(manager)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    func update(paragraphs: [Paragraph], fontSize: CGFloat, glassy: Bool) {
+        let key = "\(fontSize)|\(glassy)|" + paragraphs.map { ($0.isCue ? "#" : "") + $0.text }.joined(separator: "\n")
+        guard key != signature else { return }
+        signature = key
+
+        let text = NSMutableAttributedString()
+        // On a see-through background the text needs a shadow to stay readable over bright windows.
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.95)
+        shadow.shadowBlurRadius = 3
+        for (index, paragraph) in paragraphs.enumerated() {
+            let style = NSMutableParagraphStyle()
+            style.lineSpacing = fontSize * 0.16
+            style.paragraphSpacing = fontSize * 0.6
+            var attributes: [NSAttributedString.Key: Any] = [
+                .font: paragraph.isCue
+                    ? NSFont.systemFont(ofSize: fontSize * 0.6, weight: .regular)
+                    : NSFont.systemFont(ofSize: fontSize, weight: .medium),
+                .foregroundColor: NSColor.white.withAlphaComponent(paragraph.isCue ? 0.45 : 1),
+                .paragraphStyle: style,
+            ]
+            if glassy { attributes[.shadow] = shadow }
+            let line = paragraph.text + (index == paragraphs.count - 1 ? "" : "\n")
+            text.append(NSAttributedString(string: line, attributes: attributes))
         }
-        .clipped()
-        // Верх яркий (он ближе всего к камере), низ уходит в темноту.
-        .mask(LinearGradient(
-            stops: [
-                .init(color: .black, location: 0),
-                .init(color: .black, location: 0.45),
-                .init(color: .black.opacity(0.22), location: 1),
-            ],
-            startPoint: .top, endPoint: .bottom
-        ))
+        storage.setAttributedString(text)
+        relayout()
+    }
+
+    override func layout() {
+        super.layout()
+        relayout()
+    }
+
+    private func relayout() {
+        // Not on screen yet: a layout at a made-up width would report a made-up height.
+        guard bounds.width > 40 else { return }
+        let width = bounds.width
+        if container.size.width != width {
+            container.size = CGSize(width: width, height: .greatestFiniteMagnitude)
+        }
+        manager.ensureLayout(for: container)
+        let height = ceil(manager.usedRect(for: container).height)
+        if height != lastHeight {
+            lastHeight = height
+            onHeight?(height)
+        }
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        let visible = CGRect(x: 0, y: offset, width: bounds.width, height: bounds.height)
+        let glyphs = manager.glyphRange(forBoundingRect: visible, in: container)
+        manager.drawGlyphs(forGlyphRange: glyphs, at: CGPoint(x: 0, y: -offset))
+
+        // The top stays bright (it is closest to the camera), the bottom fades out.
+        context.saveGState()
+        context.setBlendMode(.destinationIn)
+        let colors = [CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 1), CGColor(gray: 0, alpha: 0.22)] as CFArray
+        if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceGray(), colors: colors, locations: [0, 0.45, 1]) {
+            context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: bounds.height),
+                                       options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
+        }
+        context.restoreGState()
     }
 }
 
-// MARK: - Настройка разрешений
+struct PrompterView: NSViewRepresentable {
+    @EnvironmentObject var model: AppModel
+
+    func makeNSView(context: Context) -> PrompterNSView {
+        let view = PrompterNSView()
+        let model = self.model
+        let scroller = model.scroller
+        scroller.onChange = { [weak view, weak scroller] in
+            view?.offset = scroller?.offset ?? 0
+        }
+        view.onHeight = { height in
+            DispatchQueue.main.async {
+                if model.contentHeight != height { model.contentHeight = height }
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ view: PrompterNSView, context: Context) {
+        view.update(paragraphs: model.paragraphs, fontSize: CGFloat(model.fontSize), glassy: model.transparency > 0.05)
+        view.offset = model.scroller.offset
+    }
+}
+
+// MARK: - Permissions setup
 
 struct SetupView: View {
     @EnvironmentObject var model: AppModel
@@ -109,41 +190,58 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.onboarded ? "macOS просит разрешения заново" : "Три разрешения, и можно записывать")
+                    Text(model.onboarded
+                         ? tr("macOS is asking for permissions again", "macOS просит разрешения заново")
+                         : tr("Three permissions and you can record", "Три разрешения, и можно записывать"))
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(Color.white)
-                    Text("Записи остаются на этом Mac, в папке Фильмы/demosufler")
+                    Text(tr("Recordings stay on this Mac, in Movies/demosufler",
+                            "Записи остаются на этом Mac, в папке Фильмы/demosufler"))
                         .font(.system(size: 10.5))
                         .foregroundStyle(Color.white.opacity(0.45))
                 }
                 Spacer(minLength: 8)
-                SetupButton(title: model.missingAccess ? "Позже" : "Начать", primary: !model.missingAccess) {
+                LangSwitch()
+                SetupButton(title: model.missingAccess ? tr("Later", "Позже") : tr("Start", "Начать"),
+                            primary: !model.missingAccess) {
                     model.closeSetup()
                 }
+                .demoAnchor("setup.start")
             }
             .padding(.bottom, 2)
 
-            SetupRow(icon: "video.fill", title: "Камера",
-                     detail: model.cameraAccess == .denied ? "Запрещено. Включи demosufler в настройках" : "Чтобы записывать тебя",
+            SetupRow(icon: "video.fill", title: tr("Camera", "Камера"),
+                     detail: model.cameraAccess == .denied
+                        ? tr("Blocked. Turn demosufler on in Settings", "Запрещено. Включи demosufler в настройках")
+                        : tr("To record you", "Чтобы записывать тебя"),
                      granted: model.cameraAccess == .granted) {
-                SetupButton(title: model.cameraAccess == .denied ? "Открыть настройки" : "Разрешить", primary: true) {
+                SetupButton(title: model.cameraAccess == .denied ? tr("Open Settings", "Открыть настройки") : tr("Allow", "Разрешить"),
+                            primary: true) {
                     model.askCamera()
                 }
+                .demoAnchor("setup.camera")
             }
-            SetupRow(icon: "mic.fill", title: "Микрофон",
-                     detail: model.micAccess == .denied ? "Запрещено. Включи demosufler в настройках" : "Звук пишется в каждый файл",
+            SetupRow(icon: "mic.fill", title: tr("Microphone", "Микрофон"),
+                     detail: model.micAccess == .denied
+                        ? tr("Blocked. Turn demosufler on in Settings", "Запрещено. Включи demosufler в настройках")
+                        : tr("On only while recording", "Включается только на время записи"),
                      granted: model.micAccess == .granted) {
-                SetupButton(title: model.micAccess == .denied ? "Открыть настройки" : "Разрешить", primary: !cameraNeeded) {
+                SetupButton(title: model.micAccess == .denied ? tr("Open Settings", "Открыть настройки") : tr("Allow", "Разрешить"),
+                            primary: !cameraNeeded) {
                     model.askMic()
                 }
+                .demoAnchor("setup.mic")
             }
-            SetupRow(icon: "display", title: "Запись экрана",
+            SetupRow(icon: "display", title: tr("Screen recording", "Запись экрана"),
                      detail: screenDetail, granted: model.screenAccess) {
                 if model.screenAsked {
-                    SetupButton(title: "Настройки", primary: false) { model.askScreen() }
-                    SetupButton(title: "Перезапустить", primary: true) { model.relaunch() }
+                    SetupButton(title: tr("Settings", "Настройки"), primary: false) { model.askScreen() }
+                    SetupButton(title: tr("Restart", "Перезапустить"), primary: true) { model.relaunch() }
                 } else {
-                    SetupButton(title: "Открыть настройки", primary: !cameraNeeded && !micNeeded) { model.askScreen() }
+                    SetupButton(title: tr("Open Settings", "Открыть настройки"), primary: !cameraNeeded && !micNeeded) {
+                        model.askScreen()
+                    }
+                    .demoAnchor("setup.screen")
                 }
             }
             Spacer(minLength: 0)
@@ -152,9 +250,12 @@ struct SetupView: View {
     }
 
     private var screenDetail: String {
-        if model.screenAccess { return "Панель суфлера в запись не попадает" }
-        if model.screenAsked { return "Включи demosufler в списке (если уже включён, выключи и включи) и перезапусти" }
-        return "Нужно только для режимов «Экран» и «Оба»"
+        if model.screenAccess { return tr("The prompter itself is never in the recording", "Панель суфлера в запись не попадает") }
+        if model.screenAsked {
+            return tr("Turn demosufler on in the list (if it is on, toggle it) and restart",
+                      "Включи demosufler в списке (если уже включён, выключи и включи) и перезапусти")
+        }
+        return tr("Only for the Screen, Both and Launch modes", "Нужно только для режимов «Экран», «Оба» и «Ролик»")
     }
 }
 
@@ -186,7 +287,7 @@ struct SetupRow<Trailing: View>: View {
             if granted {
                 HStack(spacing: 5) {
                     Image(systemName: "checkmark.circle.fill")
-                    Text("Разрешено")
+                    Text(tr("Allowed", "Разрешено"))
                 }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(Color.white.opacity(0.55))
@@ -223,7 +324,37 @@ struct SetupButton: View {
     }
 }
 
-// MARK: - Полоска обновления
+/// Interface language: English or Russian.
+struct LangSwitch: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 1) {
+            ForEach(Lang.allCases, id: \.self) { lang in
+                Button {
+                    model.lang = lang
+                } label: {
+                    Text(lang.rawValue.uppercased())
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(model.lang == lang ? Color.black : Color.white.opacity(0.6))
+                        .frame(width: 24, height: 17)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4.5, style: .continuous)
+                                .fill(model.lang == lang ? Color.white : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .demoAnchor("lang.\(lang.rawValue)")
+            }
+        }
+        .padding(1.5)
+        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.white.opacity(0.09)))
+        .help(tr("Interface language", "Язык интерфейса"))
+    }
+}
+
+// MARK: - Update bar
 
 struct UpdateBar: View {
     @EnvironmentObject var model: AppModel
@@ -234,25 +365,29 @@ struct UpdateBar: View {
             EmptyView()
         case .available(let info):
             bar {
-                Text("Вышла версия \(info.version)")
+                Text(tr("Version \(info.version) is out", "Вышла версия \(info.version)"))
                 Spacer(minLength: 8)
-                action(Updater.canSelfUpdate ? "Обновить" : "Скачать") { model.installUpdate() }
-                    .help(Updater.canSelfUpdate
-                          ? "Скачает новую версию и перезапустит demosufler"
-                          : "Перенеси demosufler в «Программы», и обновления будут ставиться сами")
+                action(Updater.canSelfUpdate || model.demo ? tr("Update", "Обновить") : tr("Download", "Скачать")) {
+                    model.installUpdate()
+                }
+                .demoAnchor("update")
+                .help(Updater.canSelfUpdate
+                      ? tr("Downloads the new version and restarts demosufler", "Скачает новую версию и перезапустит demosufler")
+                      : tr("Move demosufler to Applications and updates will install themselves",
+                           "Перенеси demosufler в «Программы», и обновления будут ставиться сами"))
                 close
             }
         case .installing(let info):
             bar {
                 ProgressView().controlSize(.small)
-                Text("Ставлю версию \(info.version)…")
+                Text(tr("Installing version \(info.version)…", "Ставлю версию \(info.version)…"))
                 Spacer(minLength: 8)
             }
         case .failed(_, let message):
             bar {
-                Text("Не обновилось: \(message)").lineLimit(1).truncationMode(.tail)
+                Text(tr("Update failed: ", "Не обновилось: ") + message).lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 8)
-                action("Скачать вручную") { model.openDownloadPage() }
+                action(tr("Download manually", "Скачать вручную")) { model.openDownloadPage() }
                 close
             }
         }
@@ -292,23 +427,25 @@ struct UpdateBar: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Позже")
+        .help(tr("Later", "Позже"))
     }
 }
 
-// MARK: - Левая колонка: превью и режим
+// MARK: - Left column: preview and mode
 
 struct LeftColumn: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 9) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.06))
-                if model.mode.usesCamera && model.cameraReady {
-                    CameraPreview(session: model.camera.session)
+                if model.demo && model.usesCamera {
+                    DemoFace()
+                } else if model.usesCamera && model.cameraReady, let layer = model.camera.previewLayer {
+                    CameraPreview(layer: layer)
                 } else {
-                    Image(systemName: model.mode.usesCamera ? "video.slash" : "display")
+                    Image(systemName: model.usesCamera ? "video.slash" : "display")
                         .font(.system(size: 22, weight: .light))
                         .foregroundStyle(Color.white.opacity(0.35))
                 }
@@ -318,10 +455,28 @@ struct LeftColumn: View {
 
             ModePicker()
             statusLine
+            if model.mode == .launch {
+                Button { model.launchBubble.toggle() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: model.launchBubble ? "checkmark.circle.fill" : "circle")
+                        Text(tr("Camera bubble in the video", "Кружок с камерой в ролике"))
+                    }
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.8))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(model.phase != .idle)
+                .demoAnchor("bubble")
+            }
             Spacer(minLength: 0)
-            Text("demosufler \(Updater.currentVersion)")
-                .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.28))
+            HStack {
+                Text("demosufler \(Updater.currentVersion)")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.28))
+                Spacer(minLength: 4)
+                LangSwitch()
+            }
         }
     }
 
@@ -350,13 +505,15 @@ struct ModePicker: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 1) {
             ForEach(Mode.allCases, id: \.self) { m in
                 Button {
                     model.mode = m
                 } label: {
                     Text(m.title)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 10.5, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(model.mode == m ? Color.black : Color.white.opacity(0.7))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 5)
@@ -367,6 +524,7 @@ struct ModePicker: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .demoAnchor("mode.\(m.rawValue)")
             }
         }
         .padding(2)
@@ -376,35 +534,41 @@ struct ModePicker: View {
     }
 }
 
-// MARK: - Правая колонка: скорость, размер, прозрачность, запись
+// MARK: - Right column: speed, size, transparency, record
 
 struct RightColumn: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            LabeledSlider(title: "СКОРОСТЬ", trailing: model.estimate, value: $model.speed, range: 5...120)
-            LabeledSlider(title: "РАЗМЕР", trailing: "\(Int(model.fontSize))", value: $model.fontSize, range: 16...52)
-            LabeledSlider(title: "ПРОЗРАЧНОСТЬ", trailing: "\(Int((model.transparency * 100).rounded()))%",
+            LabeledSlider(title: tr("SPEED", "СКОРОСТЬ"), trailing: model.estimate, value: $model.speed, range: 5...120)
+                .demoAnchor("speed")
+            LabeledSlider(title: tr("SIZE", "РАЗМЕР"), trailing: "\(Int(model.fontSize))", value: $model.fontSize, range: 16...52)
+                .demoAnchor("size")
+            LabeledSlider(title: tr("TRANSPARENCY", "ПРОЗРАЧНОСТЬ"), trailing: "\(Int((model.transparency * 100).rounded()))%",
                           value: $model.transparency, range: 0...0.85)
+                .demoAnchor("transparency")
 
             HStack(spacing: 5) {
                 PlayButton(scroller: model.scroller)
-                IconButton(icon: "backward.end.fill", help: "В начало текста") {
+                    .demoAnchor("play")
+                IconButton(icon: "backward.end.fill", help: tr("Back to the top", "В начало текста")) {
                     model.scroller.pause()
                     model.scroller.reset()
                 }
                 IconButton(icon: model.editing ? "checkmark" : "pencil",
-                           help: model.editing ? "Готово" : "Изменить текст") {
+                           help: model.editing ? tr("Done", "Готово") : tr("Edit the text", "Изменить текст")) {
                     model.editing.toggle()
                 }
                 .disabled(model.phase != .idle || model.showSetup)
-                IconButton(icon: "folder", help: "Папка с записями") { model.openFolder() }
-                IconButton(icon: "xmark", help: "Закрыть demosufler") { NSApp.terminate(nil) }
+                .demoAnchor("edit")
+                IconButton(icon: "folder", help: tr("Recordings folder", "Папка с записями")) { model.openFolder() }
+                IconButton(icon: "xmark", help: tr("Quit demosufler", "Закрыть demosufler")) { NSApp.terminate(nil) }
             }
 
             Spacer(minLength: 0)
             RecordButton()
+                .demoAnchor("record")
         }
     }
 }
@@ -455,7 +619,7 @@ struct PlayButton: View {
     @ObservedObject var scroller: Scroller
 
     var body: some View {
-        IconButton(icon: scroller.playing ? "pause.fill" : "play.fill", help: "Прокрутка (пробел)") {
+        IconButton(icon: scroller.playing ? "pause.fill" : "play.fill", help: tr("Scroll (Space)", "Прокрутка (пробел)")) {
             scroller.toggle()
         }
     }
@@ -473,14 +637,16 @@ struct RecordButton: View {
                 switch model.phase {
                 case .idle:
                     Circle().fill(Color.black).frame(width: 9, height: 9)
-                    Text("Запись")
+                    Text(tr("Record", "Запись"))
                 case .countdown(let n):
-                    Text("Отмена · \(n)")
+                    Text(tr("Cancel · \(n)", "Отмена · \(n)"))
                 case .recording:
                     RoundedRectangle(cornerRadius: 2).fill(Color.white).frame(width: 9, height: 9)
-                    Text("Стоп · " + AppModel.clock(model.elapsed)).monospacedDigit()
+                    Text(tr("Stop · ", "Стоп · ") + AppModel.clock(model.elapsed)).monospacedDigit()
                 case .saving:
-                    Text("Сохраняю…")
+                    Text(tr("Saving…", "Сохраняю…"))
+                case .rendering(let percent):
+                    Text(tr("Building video · \(percent)%", "Собираю ролик · \(percent)%")).monospacedDigit()
                 }
             }
             .font(.system(size: 13, weight: .semibold))
@@ -498,40 +664,52 @@ struct RecordButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(model.phase == .saving)
-        .help("Запись (⌘R)")
+        .disabled(isBusy)
+        .help(tr("Record (⌘R)", "Запись (⌘R)"))
+    }
+
+    private var isBusy: Bool {
+        switch model.phase {
+        case .saving, .rendering: return true
+        default: return false
+        }
     }
 }
 
-// MARK: - Превью камеры
+// MARK: - Camera preview
 
 struct CameraPreview: NSViewRepresentable {
-    let session: AVCaptureSession
+    let layer: AVCaptureVideoPreviewLayer
 
-    func makeNSView(context: Context) -> PreviewView { PreviewView(session: session) }
-    func updateNSView(_ nsView: PreviewView, context: Context) {}
+    func makeNSView(context: Context) -> PreviewView { PreviewView(preview: layer) }
+
+    func updateNSView(_ view: PreviewView, context: Context) { view.adopt() }
 }
 
+/// Shows the camera's preview layer. The layer belongs to the camera and outlives this view,
+/// so SwiftUI can create and drop the view freely without ever touching the capture session.
 final class PreviewView: NSView {
     private let preview: AVCaptureVideoPreviewLayer
 
-    init(session: AVCaptureSession) {
-        preview = AVCaptureVideoPreviewLayer(session: session)
+    init(preview: AVCaptureVideoPreviewLayer) {
+        self.preview = preview
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         layer?.cornerRadius = 10
         layer?.masksToBounds = true
-        preview.videoGravity = .resizeAspectFill
-        layer?.addSublayer(preview)
-        // Превью зеркальное, как в зеркале; в файл пишется обычная картинка.
-        if let connection = preview.connection, connection.isVideoMirroringSupported {
-            connection.automaticallyAdjustsVideoMirroring = false
-            connection.isVideoMirrored = true
-        }
+        adopt()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    /// Moves the shared layer into this view (it may still sit in a view that is going away).
+    func adopt() {
+        guard preview.superlayer !== layer else { return }
+        preview.removeFromSuperlayer()
+        layer?.addSublayer(preview)
+        needsLayout = true
+    }
 
     override func layout() {
         super.layout()

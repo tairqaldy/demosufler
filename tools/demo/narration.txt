@@ -1,0 +1,8 @@
+01. This is demosufler. A teleprompter that lives right under your Mac's camera, so you read your script while looking straight into the lens.
+02. Set your own pace, and see how long the script will take. Fade the panel when you need to see what is behind it.
+03. Record your camera, your screen, or both at once, each into its own file.
+04. The prompter floats above every app, and it never shows up in your recording.
+05. Press record. Three, two, one, and you are live.
+06. Launch mode goes one step further. When you press stop, it builds a finished video for you. It zooms in on every click and frames your screen on a clean background. This video was made with it.
+07. It is free and open source, it speaks English and Russian, and it updates itself in one click.
+08. demosufler. Free for your Mac.

@@ -1,16 +1,33 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>demosufler, суфлёр для Mac</title>
-<meta name="description" content="Бесплатный суфлёр для macOS. Текст едет прямо под камерой MacBook, запись камеры и экрана, всё остаётся на Маке.">
+<title>demosufler, a teleprompter for Mac</title>
+<meta name="description" content="A free teleprompter for macOS. Your script scrolls right under the MacBook camera while you record the camera, the screen or both. Everything stays on your Mac.">
 <meta property="og:type" content="website">
-<meta property="og:title" content="demosufler, суфлёр для Mac">
-<meta property="og:description" content="Текст едет прямо под камерой MacBook, а ты смотришь в объектив. Запись камеры и экрана. Бесплатно и с открытым кодом.">
+<meta property="og:title" content="demosufler, a teleprompter for Mac">
+<meta property="og:description" content="Your script scrolls right under the MacBook camera, so you look into the lens. Records camera and screen. Free and open source.">
 <meta name="theme-color" content="#000000">
 <meta name="color-scheme" content="dark">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='black'/%3E%3Crect x='7' y='9' width='18' height='3' rx='1.5' fill='white'/%3E%3Crect x='7' y='14.5' width='14' height='3' rx='1.5' fill='white' fill-opacity='.6'/%3E%3Crect x='7' y='20' width='10' height='3' rx='1.5' fill='white' fill-opacity='.3'/%3E%3C/svg%3E">
+<script>
+  /* Pick the language before the page renders: ?lang= wins, then the saved choice, then English. */
+  (function () {
+    var lang = 'en';
+    try {
+      var saved = localStorage.getItem('demosufler-lang');
+      if (saved === 'en' || saved === 'ru') lang = saved;
+    } catch (e) {}
+    try {
+      var q = new URLSearchParams(location.search).get('lang');
+      if (q === 'en' || q === 'ru') lang = q;
+    } catch (e) {}
+    var root = document.documentElement;
+    root.lang = lang;
+    root.className += ' js';
+  })();
+</script>
 <style>
   :root {
     --bg: #000;
@@ -33,12 +50,18 @@
     -webkit-font-smoothing: antialiased;
     overflow-x: clip;
   }
+
+  /* language: every translatable text exists twice, the inactive one is hidden */
+  html[lang="en"] [lang="ru"],
+  html[lang="ru"] [lang="en"] { display: none !important; }
+
   a { color: inherit; }
   a:focus-visible, button:focus-visible {
     outline: 2px solid #fff;
     outline-offset: 3px;
     border-radius: 6px;
   }
+  code { font-family: var(--mono); font-size: .88em; color: rgba(255,255,255,.8); overflow-wrap: anywhere; }
   .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
 
   .label {
@@ -54,19 +77,45 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     height: 60px;
   }
   .top .mark { font-weight: 600; font-size: 15px; letter-spacing: -.01em; text-decoration: none; }
+  .top nav { display: flex; align-items: center; gap: 20px; min-width: 0; }
   .top nav a {
     font-size: 14px;
     color: var(--dim);
     text-decoration: none;
-    margin-left: 20px;
+    white-space: nowrap;
   }
   .top nav a:hover { color: var(--fg); }
 
+  .langs { display: none; }
+  .js .langs {
+    display: inline-grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 2px;
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 999px;
+  }
+  .langs button {
+    -webkit-appearance: none;
+    appearance: none;
+    border: 0;
+    background: none;
+    color: var(--dim);
+    font: 500 11px/1 var(--font);
+    letter-spacing: .12em;
+    padding: 6px 8px 6px 9.5px;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .langs button:hover { color: var(--fg); }
+  .langs button[aria-pressed="true"] { background: #fff; color: #000; }
+  .langs button:focus-visible { border-radius: 999px; }
+
   /* hero */
-  .hero { text-align: center; padding: 56px 0 0; }
+  .hero { text-align: center; padding: 56px 0 80px; }
   .hero h1 {
     margin: 14px 0 0;
     font-size: clamp(44px, 9vw, 84px);
@@ -97,14 +146,28 @@
     transition: background .15s;
   }
   .dl:hover { background: rgba(255,255,255,.86); }
-  .dl svg { width: 16px; height: 16px; }
+  .dl svg { width: 16px; height: 16px; flex: none; }
   .caption { font-size: 13px; color: var(--dim); }
+
+  /* product video */
+  .demo { max-width: 1040px; margin: 48px auto 0; }
+  .demo video {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    background: #0a0a0a;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+  }
+  .demo figcaption { margin-top: 12px; font-size: 13px; color: var(--dim); }
 
   /* mock */
   .device {
     position: relative;
     max-width: 940px;
-    margin: 56px auto 0;
+    margin: 44px auto 0;
     padding: 0 24px;
     background: #0a0a0a;
     border: 1px solid var(--line);
@@ -138,9 +201,9 @@
   }
   .panel {
     display: grid;
-    grid-template-columns: 180px minmax(0, 1fr) 190px;
+    grid-template-columns: 204px minmax(0, 1fr) 190px;
     max-width: 860px;
-    margin: 8px auto 72px;
+    margin: 8px auto 64px;
     background: #000;
     border: 1px solid rgba(255,255,255,.16);
     border-radius: 20px;
@@ -153,19 +216,20 @@
   .cam { aspect-ratio: 16 / 9; background: rgba(255,255,255,.06); border-radius: 10px; }
   .seg {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     margin-top: 12px;
     padding: 2px;
     border: 1px solid rgba(255,255,255,.16);
     border-radius: 8px;
   }
   .seg span {
-    padding: 4px 0;
+    padding: 4px 1px;
     border-radius: 6px;
-    font-size: 10.5px;
+    font-size: 10px;
     text-align: center;
     color: var(--dim);
     white-space: nowrap;
+    overflow: hidden;
   }
   .seg span.on { background: #fff; color: #000; font-weight: 600; }
   .cap { margin-top: 8px; font-size: 10.5px; line-height: 1.35; color: var(--faint); }
@@ -245,7 +309,6 @@
 
   /* sections */
   section.block { border-top: 1px solid var(--line); padding: 80px 0; }
-  .hero + section.block { border-top: 0; padding-top: 24px; }
   h2 {
     margin: 12px 0 0;
     font-size: clamp(24px, 3.4vw, 32px);
@@ -255,6 +318,14 @@
   }
   .intro { margin: 12px 0 0; max-width: 36em; color: var(--dim); }
 
+  /* launch mode */
+  .launch { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 48px; align-items: start; }
+  .rows { list-style: none; margin: 0; padding: 0; }
+  .rows li { padding: 16px 0; border-top: 1px solid var(--line); }
+  .rows li:last-child { border-bottom: 1px solid var(--line); }
+  .rows h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.005em; }
+  .rows p { margin: 4px 0 0; font-size: 14.5px; color: var(--dim); }
+
   .features {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -263,6 +334,7 @@
     border-top: 1px solid var(--line);
     border-left: 1px solid var(--line);
   }
+  .device + .features { margin-top: 8px; }
   .features div {
     padding: 22px 20px 24px;
     border-right: 1px solid var(--line);
@@ -270,7 +342,7 @@
   }
   .features h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.005em; }
   .features p { margin: 8px 0 0; font-size: 14.5px; color: var(--dim); }
-  .features code { font-family: var(--mono); font-size: 13px; color: rgba(255,255,255,.8); overflow-wrap: anywhere; }
+  .features code { font-size: 13px; }
 
   .install { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 48px; margin-top: 40px; }
   .steps { list-style: none; margin: 0; padding: 0; counter-reset: s; }
@@ -290,18 +362,6 @@
   }
   .aside p { margin: 0 0 14px; color: var(--dim); font-size: 15px; }
   .aside .label { display: block; margin-bottom: 10px; }
-  pre {
-    margin: 0 0 22px;
-    padding: 14px 16px;
-    background: rgba(255,255,255,.05);
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    font-family: var(--mono);
-    font-size: 13px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
   .note { padding-top: 14px; border-top: 1px solid var(--line); }
 
   .keys { width: 100%; max-width: 640px; margin-top: 32px; border-collapse: collapse; }
@@ -327,18 +387,27 @@
 
   .end { text-align: center; }
   .end .cta { margin-top: 28px; }
-  .end .src { margin-top: 18px; font-size: 14px; color: var(--dim); }
+  .end .src { margin-top: 18px; font-size: 14px; color: var(--dim); overflow-wrap: anywhere; }
 
   footer { border-top: 1px solid var(--line); padding: 28px 0 40px; font-size: 14px; color: var(--dim); }
   footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px 24px; }
   footer a { color: var(--fg); }
 
+  .cmd { position: relative; margin: 18px 0 22px; }
+  .cmd pre { margin: 0; padding: 16px 128px 16px 18px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.04); white-space: pre-wrap; word-break: break-all; font: 13px/1.55 var(--mono); }
+  .copy { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #fff; color: #000; font: 600 12.5px var(--font); cursor: pointer; }
+  .copy:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  .copy .done { display: none; }
+  .copy.is-done .idle { display: none; }
+  .copy.is-done .done { display: inline; }
+
   @media (max-width: 980px) {
-    .panel { grid-template-columns: 160px minmax(0, 1fr) 170px; }
+    .panel { grid-template-columns: 188px minmax(0, 1fr) 170px; }
+    .seg span { font-size: 9.5px; }
     .features { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 820px) {
-    .install { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .install, .launch { grid-template-columns: minmax(0, 1fr); gap: 32px; }
   }
   @media (max-width: 720px) {
     .panel { grid-template-columns: minmax(0, 1fr); }
@@ -351,90 +420,149 @@
     .wrap { padding: 0 16px; }
     .features { grid-template-columns: minmax(0, 1fr); }
     section.block { padding: 56px 0; }
-    .hero { padding-top: 36px; }
-    .device { margin-top: 44px; border-radius: 18px 18px 0 0; }
+    .hero { padding: 36px 0 56px; }
+    .demo { margin-top: 36px; }
+    .demo video { border-radius: 12px; }
+    .device { margin-top: 32px; border-radius: 18px 18px 0 0; }
     .notch { width: 110px; height: 22px; }
     .mid { padding: 0 16px; }
     .panel { margin-bottom: 48px; }
     .keys th { width: 110px; }
-    .top nav a { margin-left: 14px; }
+    .top nav { gap: 14px; }
+    .cmd pre { padding-right: 18px; padding-bottom: 56px; }
+    .copy { top: auto; bottom: 10px; transform: none; }
+  }
+  @media (max-width: 400px) {
+    .top nav .gh { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     .roll { animation: none; }
     .dl { transition: none; }
   }
-
-  .cmd { position: relative; margin: 18px 0 22px; }
-  .cmd pre { margin: 0; padding: 16px 128px 16px 18px; border: 1px solid var(--line, rgba(255,255,255,.14)); border-radius: 12px; background: rgba(255,255,255,.04); white-space: pre-wrap; word-break: break-all; font: 13px/1.55 ui-monospace, "SF Mono", Menlo, monospace; }
-  .copy { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #fff; color: #000; font: 600 12.5px -apple-system, "Helvetica Neue", Arial, sans-serif; cursor: pointer; }
-  .copy:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-  @media (max-width: 520px) { .cmd pre { padding-right: 18px; padding-bottom: 56px; } .copy { top: auto; bottom: 10px; transform: none; } }
 </style>
 </head>
 <body>
 
 <header class="wrap top">
   <a class="mark" href="#">demosufler</a>
-  <nav aria-label="Разделы">
-    <a href="#install">Установка</a>
-    <a href="https://github.com/tairqaldy/demosufler">GitHub</a>
+  <nav aria-label="Sections" data-aria-ru="Разделы">
+    <a href="#install"><span lang="en">Install</span><span lang="ru">Установка</span></a>
+    <a class="gh" href="https://github.com/tairqaldy/demosufler">GitHub</a>
+    <div class="langs" role="group" aria-label="Language" data-aria-ru="Язык">
+      <button type="button" data-set-lang="en" aria-pressed="true">EN</button><button type="button" data-set-lang="ru" aria-pressed="false">RU</button>
+    </div>
   </nav>
 </header>
 
 <main>
   <section class="hero">
     <div class="wrap">
-      <div class="label">Суфлёр для macOS</div>
+      <div class="label"><span lang="en">Teleprompter for macOS</span><span lang="ru">Суфлёр для macOS</span></div>
       <h1>demosufler</h1>
-      <p class="lead">Текст едет прямо под камерой MacBook, а ты читаешь и смотришь в объектив.</p>
-      <p class="sub">Бесплатно и с открытым кодом. Без аккаунта, ничего не уходит с Мака.</p>
+      <p class="lead">
+        <span lang="en">Your script scrolls right under the MacBook camera, so you read and keep looking into the lens.</span>
+        <span lang="ru">Текст едет прямо под камерой MacBook, а ты читаешь и смотришь в объектив.</span>
+      </p>
+      <p class="sub">
+        <span lang="en">Free and open source. No account, nothing leaves your Mac.</span>
+        <span lang="ru">Бесплатно и с открытым кодом. Без аккаунта, ничего не уходит с Мака.</span>
+      </p>
       <div class="cta">
         <a class="dl" href="https://github.com/tairqaldy/demosufler/releases/latest/download/demosufler.dmg">
           <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v9M4 7.5 8 11.5l4-4M3 14h10"/></svg>
-          Скачать для Mac
+          <span lang="en">Download for Mac</span><span lang="ru">Скачать для Mac</span>
         </a>
-        <span class="caption">macOS 15+, Apple silicon и Intel · бесплатно</span>
+        <span class="caption"><span lang="en">macOS 15+, Apple silicon and Intel · free</span><span lang="ru">macOS 15+, Apple silicon и Intel · бесплатно</span></span>
       </div>
+
+      <figure class="demo">
+        <video src="demo.mp4" poster="demo-poster.jpg" autoplay muted loop playsinline controls preload="metadata"
+               aria-label="demosufler demo video" data-aria-ru="Демо-ролик demosufler"></video>
+        <figcaption>
+          <span lang="en">Made with demosufler's own Launch mode.</span>
+          <span lang="ru">Снято в режиме «Ролик» самого demosufler.</span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="block" id="launch" aria-labelledby="launch-h">
+    <div class="wrap launch">
+      <div>
+        <div class="label"><span lang="en">Launch mode</span><span lang="ru">Режим Ролик</span></div>
+        <h2 id="launch-h"><span lang="en">A finished video the moment you press Stop</span><span lang="ru">Готовое видео, как только нажмёшь Стоп</span></h2>
+        <p class="intro" lang="en">Record your screen as usual. When you press Stop, demosufler edits the recording by itself and saves an .mp4 in <code>~/Movies/demosufler</code>, next to the raw files.</p>
+        <p class="intro" lang="ru">Записываешь экран как обычно. Когда нажимаешь Стоп, demosufler сам собирает из записи готовый ролик и сохраняет .mp4 в <code>~/Movies/demosufler</code>, рядом с исходными файлами.</p>
+      </div>
+      <ul class="rows">
+        <li>
+          <h3><span lang="en">Zoom that follows your clicks</span><span lang="ru">Зум за кликами</span></h3>
+          <p><span lang="en">Smooth zoom-ins move to where you click.</span><span lang="ru">Плавные приближения следуют за твоими кликами.</span></p>
+        </li>
+        <li>
+          <h3><span lang="en">Click ripples</span><span lang="ru">Круги от кликов</span></h3>
+          <p><span lang="en">Every click leaves a ripple, so it is clear what you pressed.</span><span lang="ru">Каждый клик отмечается расходящимся кругом, и видно, что ты нажал.</span></p>
+        </li>
+        <li>
+          <h3><span lang="en">Clean background</span><span lang="ru">Чистый фон</span></h3>
+          <p><span lang="en">The recording sits on a clean background with rounded corners and a shadow.</span><span lang="ru">Запись лежит на чистом фоне со скруглёнными углами и тенью.</span></p>
+        </li>
+        <li>
+          <h3><span lang="en">Camera bubble</span><span lang="ru">Камера в кружке</span></h3>
+          <p><span lang="en">If you want, your camera shows up as a round bubble.</span><span lang="ru">Если хочешь, поверх появляется круглое окошко с камерой.</span></p>
+        </li>
+        <li>
+          <h3><span lang="en">Fade in and out</span><span lang="ru">Плавное начало и конец</span></h3>
+          <p><span lang="en">The video opens and closes with a soft fade.</span><span lang="ru">Ролик мягко появляется и так же мягко уходит.</span></p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="block" id="features" aria-labelledby="features-h">
+    <div class="wrap">
+      <div class="label"><span lang="en">What it does</span><span lang="ru">Что умеет</span></div>
+      <h2 id="features-h"><span lang="en">Read from the screen without looking away</span><span lang="ru">Читать с экрана и не отводить глаза</span></h2>
 
       <div class="device" aria-hidden="true">
         <div class="notch"></div>
         <div class="panel">
           <div class="col side side-l">
             <div class="cam"></div>
-            <div class="seg"><span class="on">Камера</span><span>Оба</span><span>Экран</span></div>
-            <div class="cap">Один файл: камера и микрофон</div>
+            <div class="seg"><span class="on">Camera</span><span>Both</span><span>Screen</span><span>Launch</span></div>
+            <div class="cap">One file: camera and microphone</div>
           </div>
           <div class="col mid">
             <div class="script">
               <div class="roll">
                 <div class="chunk">
-                  <p class="cue">Вступление</p>
-                  <p class="line">Привет. Это demosufler: текст едет прямо под камерой, а ты смотришь в объектив.</p>
-                  <p class="line">Скорость подбирается под то, как ты говоришь.</p>
-                  <p class="cue">[ПАУЗА]</p>
-                  <p class="line">Дальше покажу, как записать экран и камеру сразу.</p>
+                  <p class="cue">INTRO</p>
+                  <p class="line">Hi. This is demosufler: the text scrolls right under the camera, and you look into the lens.</p>
+                  <p class="line">Set the speed to match how you talk.</p>
+                  <p class="cue">[PAUSE]</p>
+                  <p class="line">Next I'll show you how to record the screen and the camera at once.</p>
                 </div>
                 <div class="chunk">
-                  <p class="cue">Вступление</p>
-                  <p class="line">Привет. Это demosufler: текст едет прямо под камерой, а ты смотришь в объектив.</p>
-                  <p class="line">Скорость подбирается под то, как ты говоришь.</p>
-                  <p class="cue">[ПАУЗА]</p>
-                  <p class="line">Дальше покажу, как записать экран и камеру сразу.</p>
+                  <p class="cue">INTRO</p>
+                  <p class="line">Hi. This is demosufler: the text scrolls right under the camera, and you look into the lens.</p>
+                  <p class="line">Set the speed to match how you talk.</p>
+                  <p class="cue">[PAUSE]</p>
+                  <p class="line">Next I'll show you how to record the screen and the camera at once.</p>
                 </div>
               </div>
             </div>
           </div>
           <div class="col side side-r">
             <div class="slider">
-              <div class="row"><span class="label">Скорость</span><span class="val">≈ 1:30</span></div>
+              <div class="row"><span class="label">Speed</span><span class="val">≈ 1:30</span></div>
               <div class="track" style="--v:42%"><i></i><b></b></div>
             </div>
             <div class="slider">
-              <div class="row"><span class="label">Размер</span><span class="val">28</span></div>
+              <div class="row"><span class="label">Size</span><span class="val">28</span></div>
               <div class="track" style="--v:55%"><i></i><b></b></div>
             </div>
             <div class="slider">
-              <div class="row"><span class="label">Прозрачность</span><span class="val">0%</span></div>
+              <div class="row"><span class="label">Transparency</span><span class="val">0%</span></div>
               <div class="track" style="--v:0%"><i></i><b></b></div>
             </div>
             <div class="icons">
@@ -444,49 +572,61 @@
               <span><svg viewBox="0 0 12 12"><path d="M1.6 3.2h3.2l1 1.2h4.6v5.2H1.6z"/></svg></span>
               <span><svg viewBox="0 0 12 12"><path d="M3 3l6 6M9 3 3 9"/></svg></span>
             </div>
-            <div class="rec">● Запись</div>
+            <div class="rec">● Record</div>
           </div>
         </div>
       </div>
-    </div>
-  </section>
 
-  <section class="block" id="features" aria-labelledby="features-h">
-    <div class="wrap">
-      <div class="label">Что умеет</div>
-      <h2 id="features-h">Читать с экрана и не отводить глаза</h2>
       <div class="features">
         <div>
-          <h3>Под камерой</h3>
-          <p>Чёрная панель висит сверху по центру, прямо под камерой, и прокручивает твой текст.</p>
+          <h3><span lang="en">Under the camera</span><span lang="ru">Под камерой</span></h3>
+          <p><span lang="en">A black panel sits at the top center, right under the camera, and scrolls your script.</span><span lang="ru">Чёрная панель висит сверху по центру, прямо под камерой, и прокручивает твой текст.</span></p>
         </div>
         <div>
-          <h3>Три режима записи</h3>
-          <p>Только камера, только экран или камера и экран параллельно, двумя отдельными файлами.</p>
+          <h3><span lang="en">Four recording modes</span><span lang="ru">Четыре режима записи</span></h3>
+          <p lang="en">Camera records just you, Screen just the screen. Both records camera and screen at once, as two separate files. Launch turns a screen recording into a finished video.</p>
+          <p lang="ru">«Камера» пишет только тебя, «Экран» только экран. «Оба» пишет камеру и экран параллельно, двумя отдельными файлами. «Ролик» превращает запись экрана в готовое видео.</p>
         </div>
         <div>
-          <h3>Микрофон в каждом файле</h3>
-          <p>Всё сохраняется в .mov в папку <code>~/Movies/demosufler</code>.</p>
+          <h3><span lang="en">Launch video</span><span lang="ru">Ролик</span></h3>
+          <p><span lang="en">Press Stop and get a finished .mp4: zoom that follows your clicks, click ripples, a clean background and an optional camera bubble.</span><span lang="ru">Нажимаешь Стоп и получаешь готовый .mp4: зум за кликами, круги от кликов, чистый фон и, если нужно, камера в кружке.</span></p>
         </div>
         <div>
-          <h3>Не попадает в кадр</h3>
-          <p>Сама панель суфлёра вырезается из записи экрана.</p>
+          <h3><span lang="en">Stays out of the shot</span><span lang="ru">Не попадает в кадр</span></h3>
+          <p><span lang="en">The prompter panel itself is cut out of the screen recording.</span><span lang="ru">Сама панель суфлёра вырезается из записи экрана.</span></p>
         </div>
         <div>
-          <h3>Поверх всего</h3>
-          <p>Держится над всеми окнами, на каждом рабочем столе и поверх полноэкранных приложений.</p>
+          <h3><span lang="en">Microphone in every file</span><span lang="ru">Микрофон в каждом файле</span></h3>
+          <p lang="en">Raw recordings are saved as .mov in <code>~/Movies/demosufler</code>.</p>
+          <p lang="ru">Исходные записи сохраняются в .mov в папку <code>~/Movies/demosufler</code>.</p>
         </div>
         <div>
-          <h3>Скорость и вид</h3>
-          <p>Ползунок скорости сразу показывает, сколько займёт весь текст. Ещё размер шрифта и прозрачность фона.</p>
+          <h3><span lang="en">Music in AirPods stays clean</span><span lang="ru">Музыка в AirPods не портится</span></h3>
+          <p><span lang="en">If your default input is Bluetooth headphones, it records from the Mac's built-in microphone, and it opens the mic only while recording.</span><span lang="ru">Если по умолчанию выбраны Bluetooth-наушники, запись идёт со встроенного микрофона Мака, а сам микрофон открывается только на время записи.</span></p>
         </div>
         <div>
-          <h3>Ремарки</h3>
-          <p>Строки в [скобках] или начинающиеся с # показываются тусклыми, как пометки для себя.</p>
+          <h3><span lang="en">On top of everything</span><span lang="ru">Поверх всего</span></h3>
+          <p><span lang="en">Stays above all windows, on every desktop and over full-screen apps.</span><span lang="ru">Держится над всеми окнами, на каждом рабочем столе и поверх полноэкранных приложений.</span></p>
         </div>
         <div>
-          <h3>Обновления</h3>
-          <p>При запуске проверяет GitHub и предлагает обновиться в один клик.</p>
+          <h3><span lang="en">Speed and look</span><span lang="ru">Скорость и вид</span></h3>
+          <p><span lang="en">The speed slider shows right away how long the whole script will take. There is also font size and background transparency.</span><span lang="ru">Ползунок скорости сразу показывает, сколько займёт весь текст. Ещё размер шрифта и прозрачность фона.</span></p>
+        </div>
+        <div>
+          <h3><span lang="en">Cues</span><span lang="ru">Ремарки</span></h3>
+          <p><span lang="en">Lines in [brackets] or starting with # show up dimmed, as notes to yourself.</span><span lang="ru">Строки в [скобках] или начинающиеся с # показываются тусклыми, как пометки для себя.</span></p>
+        </div>
+        <div>
+          <h3><span lang="en">Setup on the panel</span><span lang="ru">Настройка на панели</span></h3>
+          <p><span lang="en">On first run the panel walks you through permissions: camera and microphone take one button, screen recording goes through System Settings, then you press Restart on the panel.</span><span lang="ru">При первом запуске панель сама проводит по разрешениям: камера и микрофон включаются одной кнопкой, запись экрана в Настройках, а потом перезапуск кнопкой на панели.</span></p>
+        </div>
+        <div>
+          <h3><span lang="en">English or Russian</span><span lang="ru">Английский или русский</span></h3>
+          <p><span lang="en">The app is in English by default. You can switch to Russian on the first-run screen and later from the panel.</span><span lang="ru">По умолчанию приложение на английском. Русский можно выбрать на первом экране и потом в панели.</span></p>
+        </div>
+        <div>
+          <h3><span lang="en">Updates</span><span lang="ru">Обновления</span></h3>
+          <p><span lang="en">Checks GitHub on launch and offers to update in one click.</span><span lang="ru">При запуске проверяет GitHub и предлагает обновиться в один клик.</span></p>
         </div>
       </div>
     </div>
@@ -494,25 +634,32 @@
 
   <section class="block" id="install" aria-labelledby="install-h">
     <div class="wrap">
-      <div class="label">Как установить</div>
-      <h2 id="install-h">Быстрее всего одной командой</h2>
-      <p class="intro">Открой Терминал (⌘ Пробел, «Терминал»), вставь строку и нажми Enter. Команда скачает последнюю версию в «Программы» и запустит её, без предупреждений macOS.</p>
+      <div class="label"><span lang="en">Install</span><span lang="ru">Как установить</span></div>
+      <h2 id="install-h"><span lang="en">The fastest way is one command</span><span lang="ru">Быстрее всего одной командой</span></h2>
+      <p class="intro" lang="en">Open Terminal (⌘ Space, type “Terminal”), paste the line and press Enter. It downloads the latest version into Applications and opens it, with no macOS warnings.</p>
+      <p class="intro" lang="ru">Открой Терминал (⌘ Пробел, «Терминал»), вставь строку и нажми Enter. Команда скачает последнюю версию в «Программы» и запустит её, без предупреждений macOS.</p>
       <div class="cmd">
         <pre><code id="cmd">curl -fsSL https://raw.githubusercontent.com/tairqaldy/demosufler/main/install.sh | bash</code></pre>
-        <button type="button" class="copy" data-target="cmd">Скопировать</button>
+        <button type="button" class="copy" data-target="cmd">
+          <span class="idle"><span lang="en">Copy</span><span lang="ru">Скопировать</span></span>
+          <span class="done"><span lang="en">Copied</span><span lang="ru">Скопировано</span></span>
+        </button>
       </div>
-      <p class="intro">Дальше demosufler сам покажет, какие разрешения нужны: камера и микрофон включаются одной кнопкой, запись экрана включается в Настройках, и после этого приложение перезапускается кнопкой на панели. Обновления приходят полоской внизу панели и ставятся в один клик.</p>
+      <p class="intro" lang="en">After that the panel shows which permissions demosufler needs: camera and microphone take one button, screen recording is turned on in System Settings, and then you restart the app with the Restart button on the panel. Updates arrive as a strip at the bottom of the panel and install in one click.</p>
+      <p class="intro" lang="ru">Дальше demosufler сам покажет на панели, какие разрешения нужны: камера и микрофон включаются одной кнопкой, запись экрана включается в Настройках, и после этого приложение перезапускается кнопкой на панели. Обновления приходят полоской внизу панели и ставятся в один клик.</p>
       <div class="install">
         <ol class="steps">
-          <li><span>Или скачай demosufler.dmg и перетащи demosufler в «Программы».</span></li>
-          <li><span>При первом запуске macOS скажет, что не может проверить разработчика: у меня нет платного аккаунта Apple. Закрой окно.</span></li>
-          <li><span>«Системные настройки → Конфиденциальность и безопасность», внизу нажми «Всё равно открыть» рядом с demosufler.</span></li>
-          <li><span>Запусти ещё раз и разреши то, что попросит панель.</span></li>
+          <li><span lang="en">Or download demosufler.dmg and drag demosufler into Applications.</span><span lang="ru">Или скачай demosufler.dmg и перетащи demosufler в «Программы».</span></li>
+          <li><span lang="en">On first launch macOS says it can't verify the developer: I don't have a paid Apple developer account. Close that window.</span><span lang="ru">При первом запуске macOS скажет, что не может проверить разработчика: у меня нет платного аккаунта Apple. Закрой окно.</span></li>
+          <li><span lang="en">Go to System Settings → Privacy &amp; Security and click Open Anyway next to demosufler near the bottom.</span><span lang="ru">«Системные настройки → Конфиденциальность и безопасность», внизу нажми «Всё равно открыть» рядом с demosufler.</span></li>
+          <li><span lang="en">Open it again and allow what the panel asks for.</span><span lang="ru">Запусти ещё раз и разреши то, что попросит панель.</span></li>
         </ol>
         <div class="aside">
-          <span class="label">Если что-то не так</span>
-          <p>Запись экрана включена, а приложение всё равно просит доступ: выключи и снова включи demosufler в «Запись экрана и системного звука» и перезапусти его.</p>
-          <p class="note">После обновления macOS может снова спросить разрешения: подпись у каждой версии своя.</p>
+          <span class="label"><span lang="en">If something is off</span><span lang="ru">Если что-то не так</span></span>
+          <p lang="en">Screen recording is on but the app still asks for access: turn demosufler off and on again under Screen &amp; System Audio Recording, then restart it.</p>
+          <p lang="ru">Запись экрана включена, а приложение всё равно просит доступ: выключи и снова включи demosufler в «Запись экрана и системного звука» и перезапусти его.</p>
+          <p class="note" lang="en">After an update macOS may ask for permissions again, because every version has its own signature.</p>
+          <p class="note" lang="ru">После обновления macOS может снова спросить разрешения: подпись у каждой версии своя.</p>
         </div>
       </div>
     </div>
@@ -520,14 +667,14 @@
 
   <section class="block" id="keys" aria-labelledby="keys-h">
     <div class="wrap">
-      <div class="label">Горячие клавиши</div>
-      <h2 id="keys-h">Управление без мыши</h2>
+      <div class="label"><span lang="en">Shortcuts</span><span lang="ru">Горячие клавиши</span></div>
+      <h2 id="keys-h"><span lang="en">No mouse needed</span><span lang="ru">Управление без мыши</span></h2>
       <table class="keys">
         <tbody>
-          <tr><th scope="row"><kbd>Пробел</kbd></th><td>Пауза и продолжение прокрутки</td></tr>
-          <tr><th scope="row"><kbd>↑</kbd><kbd>↓</kbd></th><td>Быстрее и медленнее</td></tr>
-          <tr><th scope="row"><kbd>⌘R</kbd></th><td>Начать и остановить запись</td></tr>
-          <tr><th scope="row">Трекпад</th><td>Прокрутка двумя пальцами двигает текст вручную</td></tr>
+          <tr><th scope="row"><kbd><span lang="en">Space</span><span lang="ru">Пробел</span></kbd></th><td><span lang="en">Pause and resume scrolling</span><span lang="ru">Пауза и продолжение прокрутки</span></td></tr>
+          <tr><th scope="row"><kbd>↑</kbd><kbd>↓</kbd></th><td><span lang="en">Faster and slower</span><span lang="ru">Быстрее и медленнее</span></td></tr>
+          <tr><th scope="row"><kbd>⌘R</kbd></th><td><span lang="en">Start and stop recording</span><span lang="ru">Начать и остановить запись</span></td></tr>
+          <tr><th scope="row"><span lang="en">Trackpad</span><span lang="ru">Трекпад</span></th><td><span lang="en">Two-finger scrolling moves the text by hand</span><span lang="ru">Прокрутка двумя пальцами двигает текст вручную</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -535,37 +682,89 @@
 
   <section class="block end" aria-labelledby="end-h">
     <div class="wrap">
-      <div class="label">Скачать</div>
-      <h2 id="end-h">Последняя версия</h2>
+      <div class="label"><span lang="en">Download</span><span lang="ru">Скачать</span></div>
+      <h2 id="end-h"><span lang="en">Latest version</span><span lang="ru">Последняя версия</span></h2>
       <div class="cta">
         <a class="dl" href="https://github.com/tairqaldy/demosufler/releases/latest/download/demosufler.dmg">
           <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v9M4 7.5 8 11.5l4-4M3 14h10"/></svg>
-          Скачать для Mac
+          <span lang="en">Download for Mac</span><span lang="ru">Скачать для Mac</span>
         </a>
-        <span class="caption">macOS 15+, Apple silicon и Intel · бесплатно</span>
+        <span class="caption"><span lang="en">macOS 15+, Apple silicon and Intel · free</span><span lang="ru">macOS 15+, Apple silicon и Intel · бесплатно</span></span>
       </div>
-      <p class="src">Исходный код: <a href="https://github.com/tairqaldy/demosufler">github.com/tairqaldy/demosufler</a></p>
+      <p class="src"><span lang="en">Source code:</span><span lang="ru">Исходный код:</span> <a href="https://github.com/tairqaldy/demosufler">github.com/tairqaldy/demosufler</a></p>
     </div>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
-    <span>Сделано для себя, выложено как есть.</span>
+    <span><span lang="en">Made for myself, shared as is.</span><span lang="ru">Сделано для себя, выложено как есть.</span></span>
     <a href="https://github.com/tairqaldy/demosufler">GitHub</a>
   </div>
 </footer>
 
 <script>
-document.querySelectorAll('.copy').forEach(function (b) {
-  b.addEventListener('click', function () {
-    var t = document.getElementById(b.dataset.target).textContent;
-    navigator.clipboard.writeText(t).then(function () {
-      b.textContent = 'Скопировано';
-      setTimeout(function () { b.textContent = 'Скопировать'; }, 1600);
+(function () {
+  var root = document.documentElement;
+  var meta = {
+    en: {
+      title: 'demosufler, a teleprompter for Mac',
+      description: 'A free teleprompter for macOS. Your script scrolls right under the MacBook camera while you record the camera, the screen or both. Everything stays on your Mac.'
+    },
+    ru: {
+      title: 'demosufler, суфлёр для Mac',
+      description: 'Бесплатный суфлёр для macOS. Текст едет прямо под камерой MacBook, запись камеры и экрана, всё остаётся на Маке.'
+    }
+  };
+  var desc = document.querySelector('meta[name="description"]');
+  var labelled = document.querySelectorAll('[data-aria-ru]');
+  var switches = document.querySelectorAll('[data-set-lang]');
+
+  labelled.forEach(function (el) { el.setAttribute('data-aria-en', el.getAttribute('aria-label')); });
+
+  function apply(lang) {
+    root.lang = lang;
+    document.title = meta[lang].title;
+    if (desc) desc.setAttribute('content', meta[lang].description);
+    labelled.forEach(function (el) { el.setAttribute('aria-label', el.getAttribute('data-aria-' + lang)); });
+    switches.forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-set-lang') === lang)); });
+  }
+
+  switches.forEach(function (b) {
+    b.addEventListener('click', function () {
+      var lang = b.getAttribute('data-set-lang');
+      apply(lang);
+      try { localStorage.setItem('demosufler-lang', lang); } catch (e) {}
+      try {
+        var url = new URL(location.href);
+        if (url.searchParams.has('lang')) {
+          url.searchParams.delete('lang');
+          history.replaceState(null, '', url.toString());
+        }
+      } catch (e) {}
     });
   });
-});
+
+  apply(root.lang === 'ru' ? 'ru' : 'en');
+
+  /* respect reduced motion: no autoplay for the demo video */
+  var video = document.querySelector('.demo video');
+  if (video && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    video.removeAttribute('autoplay');
+    video.pause();
+  }
+
+  document.querySelectorAll('.copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = document.getElementById(b.dataset.target).textContent;
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(t).then(function () {
+        b.classList.add('is-done');
+        setTimeout(function () { b.classList.remove('is-done'); }, 1600);
+      });
+    });
+  });
+})();
 </script>
 </body>
 </html>

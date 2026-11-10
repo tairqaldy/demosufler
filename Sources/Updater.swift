@@ -23,7 +23,8 @@ struct UpdateError: LocalizedError {
 /// Обновление из GitHub Releases: спросить последнюю версию, скачать zip, подменить .app, перезапуститься.
 enum Updater {
     static var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+            ?? ProcessInfo.processInfo.environment["DEMOSUFLER_VERSION"] ?? "0"
     }
 
     /// Адрес ленты можно подменить для проверки: DEMOSUFLER_FEED=file:///…/latest.json
@@ -82,7 +83,7 @@ enum Updater {
         let fm = FileManager.default
         let appURL = Bundle.main.bundleURL
         guard canSelfUpdate else {
-            throw UpdateError("Перенеси demosufler в «Программы» и запусти оттуда")
+            throw UpdateError(tr("Move demosufler to Applications and run it from there", "Перенеси demosufler в «Программы» и запусти оттуда"))
         }
 
         let work = fm.temporaryDirectory.appendingPathComponent("demosufler-update-\(UUID().uuidString)")
@@ -90,7 +91,7 @@ enum Updater {
 
         let (downloaded, response) = try await URLSession.shared.download(from: info.zipURL)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
-            throw UpdateError("GitHub ответил \(http.statusCode)")
+            throw UpdateError(tr("GitHub answered \(http.statusCode)", "GitHub ответил \(http.statusCode)"))
         }
         let zip = work.appendingPathComponent("update.zip")
         try fm.moveItem(at: downloaded, to: zip)
@@ -105,7 +106,7 @@ enum Updater {
               let newVersion = plist["CFBundleShortVersionString"] as? String,
               isNewer(newVersion, than: currentVersion)
         else {
-            throw UpdateError("В архиве не та версия demosufler")
+            throw UpdateError(tr("The archive holds a different version of demosufler", "В архиве не та версия demosufler"))
         }
         // Подпись должна быть целой: архив не побился и не был изменён после сборки.
         try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", newApp.path])
@@ -139,7 +140,7 @@ enum Updater {
         try process.run()
         process.waitUntilExit()
         if process.terminationStatus != 0 {
-            throw UpdateError("Не прошла проверка архива (\(URL(fileURLWithPath: tool).lastPathComponent))")
+            throw UpdateError(tr("The archive did not pass the check", "Не прошла проверка архива") + " (\(URL(fileURLWithPath: tool).lastPathComponent))")
         }
     }
 }
