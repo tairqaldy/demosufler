@@ -73,9 +73,11 @@ On launch the app asks GitHub for the latest release of this repository. If it i
 at the bottom of the panel with an Update button: the app downloads `demosufler.zip` from the release,
 checks its signature, replaces itself and restarts.
 
-The app is signed locally (there is no paid Apple developer account), so every build has its own
-signature. After an update macOS asks for camera and microphone again, and screen recording has to be
-switched on once more. The panel shows what to press.
+There is no paid Apple developer account behind the app, so it is not notarized. It is signed with
+its own self-signed certificate instead, the same one for every release since 1.1.3. macOS ties camera,
+microphone and screen recording permissions to that signature, so they are asked once and kept across
+updates. (Updating from a version before 1.1.3 asks one last time.) The updater also refuses any build
+that is not signed with this certificate.
 
 ## Building
 
@@ -85,7 +87,16 @@ Only the Command Line Tools are needed (`xcode-select --install`), not Xcode.
 ./build.sh
 ```
 
-builds `build/demosufler.app`. To publish an update:
+builds `build/demosufler.app`.
+
+Releases are signed with a private identity that lives outside the repository, in
+`~/Library/Application Support/demosufler-signing` (`tools/make_signing_identity.sh` creates it,
+`tools/sign.swift` signs with it, no keychain is involved). Keep that folder backed up: with a different
+identity macOS treats the app as a new one and asks everybody for the permissions again. Without the
+folder `build.sh` still works and gives the build a one-off local signature.
+
+To publish an update:
+
 
 1. Raise the number in `VERSION` and commit.
 2. Run `./release.sh`. It builds the app, packs `dist/demosufler.zip` and `dist/demosufler.dmg`, pushes
@@ -122,4 +133,5 @@ renders the result with the Launch renderer. The narration lines are in `tools/d
 | `Sources/Views.swift` | the interface (SwiftUI, the prompter text itself is drawn with AppKit) |
 | `Sources/L10n.swift` | English and Russian strings |
 | `Sources/Demo.swift`, `Sources/Tools.swift` | scripted demo and command line helpers |
+| `tools/sign.swift`, `tools/make_signing_identity.sh` | signing with the app's own certificate |
 | `landing/` | the landing page, one static file plus the video |

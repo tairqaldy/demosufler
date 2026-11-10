@@ -87,6 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var panel: PrompterPanel!
     let model = AppModel()
     private let watchdog = Watchdog()
+    private var leaving = false
+    private var readyToLeave = false
     private var statusItem: NSStatusItem?
     private var backdrop: NSWindow?
     private var director: DemoDirector?
@@ -143,6 +145,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         model.start()
         model.checkForUpdate()
+
+        // Test hook: DEMOSUFLER_TEST_QUIT=<seconds> records for that long (0 = do not record)
+        // and then quits the normal way, so that the time a quit takes can be measured.
+        if let value = ProcessInfo.processInfo.environment["DEMOSUFLER_TEST_QUIT"], let seconds = Double(value) {
+            if seconds > 0 { DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.model.toggleRecord() } }
+            let trace = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                self.note("phase \(self.model.phase) setup \(self.model.showSetup) status '\(self.model.status)' update \(self.model.update)")
+            }
+            RunLoop.main.add(trace, forMode: .common)
+            DispatchQueue.main.asyncAfter(deadline: .now() + (seconds > 0 ? 4.6 + seconds : 2)) {
+                self.note("terminate")
+                NSApp.terminate(nil)
+            }
+        }
     }
 
     /// The screen with the camera: the MacBook's own display when there is one.
@@ -249,13 +266,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if model.phase == .recording || model.phase == .saving {
-            // Finish writing the files first, then quit.
-            model.stopRecording { NSApp.reply(toApplicationShouldTerminate: true) }
-            return .terminateLater
+        if readyToLeave || !(model.phase == .recording || model.phase == .saving) {
+            leaveNow()
+            return .terminateNow
         }
-        model.camera.stop()
-        return .terminateNow
+        // A recording is being written: finish the files first, then quit.
+        //
+        // This deliberately does not answer "terminate later". While AppKit waits for that
+        // answer it runs the main thread in a special mode in which queued work (and Swift
+        // tasks on the main actor) is not carried out, so the save could never complete and the
+        // quit hung. Instead the quit is cancelled, the save runs normally, and the app quits by
+        // itself as soon as it is done, or after a few seconds at the latest.
+        if !leaving {
+            leaving = true
+            note("saving")
+            let finish = { [self] in
+                if readyToLeave { return }
+                readyToLeave = true
+                NSApp.terminate(nil)
+            }
+            model.stopRecording(then: finish)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6, execute: finish)
+        }
+        return .terminateCancel
+    }
+
+    /// The panel disappears at once, and the process is gone within half a second whatever the
+    /// camera or AppKit still want to tidy up. Nothing is being written at this point.
+    private func leaveNow() {
+        note("quit")
+        panel.orderOut(nil)
+        if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+        UserDefaults.standard.synchronize()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { _exit(0) }
+    }
+
+    /// Test hook: timestamps on standard output when DEMOSUFLER_TEST_QUIT is set.
+    private func note(_ what: String) {
+        guard ProcessInfo.processInfo.environment["DEMOSUFLER_TEST_QUIT"] != nil else { return }
+        print(String(format: "%@ %.3f", what, ProcessInfo.processInfo.systemUptime))
+        fflush(stdout)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

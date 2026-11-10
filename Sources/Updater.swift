@@ -110,6 +110,10 @@ enum Updater {
         }
         // Подпись должна быть целой: архив не побился и не был изменён после сборки.
         try run("/usr/bin/codesign", ["--verify", "--deep", "--strict", newApp.path])
+        // And it has to come from the same signer as the app that is running.
+        guard signedLikeThisApp(newApp) else {
+            throw UpdateError(tr("The update is signed by someone else", "Обновление подписано кем-то другим"))
+        }
 
         let backup = work.appendingPathComponent("previous.app")
         try fm.moveItem(at: appURL, to: backup)
@@ -120,6 +124,28 @@ enum Updater {
             throw error
         }
         try? fm.removeItem(at: work)
+    }
+
+    /// true when `app` satisfies the designated requirement of the running app, that is, when it
+    /// was signed with the same identity. A build with a one-off local signature has nothing to
+    /// compare with, so it accepts any intact build.
+    static func signedLikeThisApp(_ app: URL) -> Bool {
+        var running: SecCode?
+        var mine: SecStaticCode?
+        guard SecCodeCopySelf([], &running) == errSecSuccess, let running,
+              SecCodeCopyStaticCode(running, [], &mine) == errSecSuccess, let mine else { return true }
+        var info: CFDictionary?
+        SecCodeCopySigningInformation(mine, SecCSFlags(rawValue: kSecCSSigningInformation), &info)
+        let flags = ((info as? [String: Any])?[kSecCodeInfoFlags as String] as? NSNumber)?.uint32Value ?? 0
+        let adHoc: UInt32 = 0x2
+        var requirement: SecRequirement?
+        guard flags & adHoc == 0, (info as? [String: Any])?[kSecCodeInfoCertificates as String] != nil,
+              SecCodeCopyDesignatedRequirement(mine, [], &requirement) == errSecSuccess, let requirement else {
+            return true
+        }
+        var other: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(app as CFURL, [], &other) == errSecSuccess, let other else { return false }
+        return SecStaticCodeCheckValidity(other, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), requirement) == errSecSuccess
     }
 
     /// Запускает новую копию после выхода текущей.

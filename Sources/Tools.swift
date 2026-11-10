@@ -11,8 +11,9 @@ import AppKit
 ///   --selftest <folder>                    record the screen for a few seconds, render, check
 ///   --check-dark <file>                    list stretches of pure black frames
 ///   --plan <track.json> <seconds>          print the camera moves for a pointer track
+///   --access                               print the camera, microphone and screen permissions
 enum Tools {
-    static let commands: Set<String> = ["--probe", "--frame", "--render", "--selftest", "--check-dark", "--plan"]
+    static let commands: Set<String> = ["--probe", "--frame", "--render", "--selftest", "--check-dark", "--plan", "--access"]
 
     private struct VoiceClip: Decodable {
         var file: String
@@ -64,6 +65,20 @@ enum Tools {
                 }
                 print(String(format: "rendered in %.1fs", Date().timeIntervalSince(started)))
                 print(await MediaTools.describe(URL(fileURLWithPath: out)))
+                return 0
+
+            case "--access":
+                // Prints what macOS currently allows this app (as seen by the binary that runs it).
+                func name(_ status: AVAuthorizationStatus) -> String {
+                    switch status {
+                    case .authorized: return "allowed"
+                    case .notDetermined: return "not asked"
+                    default: return "denied"
+                    }
+                }
+                print("camera: \(name(AVCaptureDevice.authorizationStatus(for: .video)))")
+                print("microphone: \(name(AVCaptureDevice.authorizationStatus(for: .audio)))")
+                print("screen recording: \(CGPreflightScreenCaptureAccess() ? "allowed" : "not allowed")")
                 return 0
 
             case "--plan":

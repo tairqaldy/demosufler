@@ -25,7 +25,18 @@ for ARCH in arm64 x86_64; do
 done
 lipo -create "$TMP/demosufler-arm64" "$TMP/demosufler-x86_64" -output "$APP/Contents/MacOS/demosufler"
 
-# Локальная подпись (без платного аккаунта разработчика). Подпись у каждой сборки своя,
-# поэтому после обновления macOS заново спрашивает камеру, микрофон и запись экрана.
-codesign --force --sign - "$APP"
+# Signing. macOS ties camera, microphone and screen recording permissions to the signature.
+# With the identity made by tools/make_signing_identity.sh every build carries the same
+# signature identity, so permissions given once survive updates. Without it the build gets a
+# local one-off signature and macOS asks again after every update.
+SIGNING="${DEMOSUFLER_SIGNING_DIR:-$HOME/Library/Application Support/demosufler-signing}"
+codesign --force --sign - "$APP" 2>/dev/null
+if [ -f "$SIGNING/identity.p12" ]; then
+    swiftc -O tools/sign.swift -o "$TMP/sign-tool"
+    "$TMP/sign-tool" "$SIGNING/identity.p12" "$SIGNING/password" "$APP" >/dev/null
+    codesign --verify --deep --strict "$APP"
+    echo "Signed with the demosufler identity"
+else
+    echo "No signing identity (run tools/make_signing_identity.sh): signed for this build only"
+fi
 echo "Готово: $APP (версия $VERSION)"

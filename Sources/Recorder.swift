@@ -150,7 +150,7 @@ final class CameraRecorder: NSObject, AVCaptureFileOutputRecordingDelegate {
             self.onFinish = completion
             self.output.stopRecording()
             // Never leave the interface stuck on "Saving" if the delegate stays silent.
-            self.queue.asyncAfter(deadline: .now() + 6) {
+            self.queue.asyncAfter(deadline: .now() + 3) {
                 let done = self.onFinish
                 self.onFinish = nil
                 done?()
@@ -268,9 +268,9 @@ final class ScreenRecorder: NSObject, SCStreamDelegate, SCRecordingOutputDelegat
     func stop() async {
         guard let stream else { return }
         try? await stream.stopCapture()
-        // Wait for the file to be finalised (5 seconds at most).
-        for _ in 0..<50 where !isFinished {
-            try? await Task.sleep(nanoseconds: 100_000_000)
+        // Wait for the file to be finalised (3 seconds at most), checking often.
+        for _ in 0..<150 where !isFinished {
+            try? await Task.sleep(nanoseconds: 20_000_000)
         }
         self.stream = nil
         self.recording = nil

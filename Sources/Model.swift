@@ -563,16 +563,18 @@ final class AppModel: ObservableObject {
         let pendingScreen = screenStart
         let finalURL = launchURL
         Task { @MainActor in
-            var screenOK = false
-            if let pendingScreen, await pendingScreen.value {
+            // Stop the screen and the camera at the same time, not one after the other.
+            let screenStop = Task<Bool, Never> {
+                guard let pendingScreen, await pendingScreen.value else { return false }
                 await self.screen.stop()
-                screenOK = true
+                return true
             }
             if usedCamera {
                 await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
                     self.camera.stopRecording { c.resume() }
                 }
             }
+            let screenOK = await screenStop.value
             self.camera.setMic(false)
             let saved = urls.filter { url in
                 let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
