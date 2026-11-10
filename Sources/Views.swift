@@ -32,7 +32,9 @@ struct RootView: View {
 
     private var center: some View {
         ZStack {
-            if model.editing {
+            if model.showSetup {
+                SetupView()
+            } else if model.editing {
                 TextEditor(text: $model.script)
                     .font(.system(size: 14))
                     .foregroundStyle(Color.white)
@@ -92,6 +94,132 @@ struct PrompterView: View {
             ],
             startPoint: .top, endPoint: .bottom
         ))
+    }
+}
+
+// MARK: - Настройка разрешений
+
+struct SetupView: View {
+    @EnvironmentObject var model: AppModel
+
+    private var cameraNeeded: Bool { model.cameraAccess != .granted }
+    private var micNeeded: Bool { model.micAccess != .granted }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.onboarded ? "macOS просит разрешения заново" : "Три разрешения, и можно записывать")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                    Text("Записи остаются на этом Mac, в папке Фильмы/demosufler")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Color.white.opacity(0.45))
+                }
+                Spacer(minLength: 8)
+                SetupButton(title: model.missingAccess ? "Позже" : "Начать", primary: !model.missingAccess) {
+                    model.closeSetup()
+                }
+            }
+            .padding(.bottom, 2)
+
+            SetupRow(icon: "video.fill", title: "Камера",
+                     detail: model.cameraAccess == .denied ? "Запрещено. Включи demosufler в настройках" : "Чтобы записывать тебя",
+                     granted: model.cameraAccess == .granted) {
+                SetupButton(title: model.cameraAccess == .denied ? "Открыть настройки" : "Разрешить", primary: true) {
+                    model.askCamera()
+                }
+            }
+            SetupRow(icon: "mic.fill", title: "Микрофон",
+                     detail: model.micAccess == .denied ? "Запрещено. Включи demosufler в настройках" : "Звук пишется в каждый файл",
+                     granted: model.micAccess == .granted) {
+                SetupButton(title: model.micAccess == .denied ? "Открыть настройки" : "Разрешить", primary: !cameraNeeded) {
+                    model.askMic()
+                }
+            }
+            SetupRow(icon: "display", title: "Запись экрана",
+                     detail: screenDetail, granted: model.screenAccess) {
+                if model.screenAsked {
+                    SetupButton(title: "Настройки", primary: false) { model.askScreen() }
+                    SetupButton(title: "Перезапустить", primary: true) { model.relaunch() }
+                } else {
+                    SetupButton(title: "Открыть настройки", primary: !cameraNeeded && !micNeeded) { model.askScreen() }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var screenDetail: String {
+        if model.screenAccess { return "Панель суфлера в запись не попадает" }
+        if model.screenAsked { return "Включи demosufler в списке (если уже включён, выключи и включи) и перезапусти" }
+        return "Нужно только для режимов «Экран» и «Оба»"
+    }
+}
+
+struct SetupRow<Trailing: View>: View {
+    let icon: String
+    let title: String
+    let detail: String
+    let granted: Bool
+    @ViewBuilder let trailing: () -> Trailing
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.white.opacity(granted ? 0.5 : 0.9))
+                .frame(width: 28, height: 28)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.09)))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(granted ? 0.6 : 1))
+                Text(detail)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.white.opacity(0.45))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 8)
+            if granted {
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.circle.fill")
+                    Text("Разрешено")
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.55))
+                .padding(.trailing, 4)
+            } else {
+                trailing()
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 42)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.05)))
+    }
+}
+
+struct SetupButton: View {
+    let title: String
+    let primary: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(primary ? Color.black : Color.white.opacity(0.9))
+                .padding(.horizontal, 11)
+                .frame(height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(primary ? Color.white : Color.white.opacity(0.12))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -270,7 +398,7 @@ struct RightColumn: View {
                            help: model.editing ? "Готово" : "Изменить текст") {
                     model.editing.toggle()
                 }
-                .disabled(model.phase != .idle)
+                .disabled(model.phase != .idle || model.showSetup)
                 IconButton(icon: "folder", help: "Папка с записями") { model.openFolder() }
                 IconButton(icon: "xmark", help: "Закрыть demosufler") { NSApp.terminate(nil) }
             }

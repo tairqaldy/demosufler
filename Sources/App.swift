@@ -83,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
 
         installShortcuts()
-        model.updateDevices()
+        model.start()
         model.checkForUpdate()
     }
 

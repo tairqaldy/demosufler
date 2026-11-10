@@ -363,6 +363,12 @@
     .roll { animation: none; }
     .dl { transition: none; }
   }
+
+  .cmd { position: relative; margin: 18px 0 22px; }
+  .cmd pre { margin: 0; padding: 16px 128px 16px 18px; border: 1px solid var(--line, rgba(255,255,255,.14)); border-radius: 12px; background: rgba(255,255,255,.04); white-space: pre-wrap; word-break: break-all; font: 13px/1.55 ui-monospace, "SF Mono", Menlo, monospace; }
+  .copy { position: absolute; top: 50%; right: 10px; transform: translateY(-50%); height: 32px; padding: 0 14px; border: 0; border-radius: 8px; background: #fff; color: #000; font: 600 12.5px -apple-system, "Helvetica Neue", Arial, sans-serif; cursor: pointer; }
+  .copy:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  @media (max-width: 520px) { .cmd pre { padding-right: 18px; padding-bottom: 56px; } .copy { top: auto; bottom: 10px; transform: none; } }
 </style>
 </head>
 <body>
@@ -489,20 +495,24 @@
   <section class="block" id="install" aria-labelledby="install-h">
     <div class="wrap">
       <div class="label">Как установить</div>
-      <h2 id="install-h">Первый запуск придётся разрешить вручную</h2>
-      <p class="intro">У меня нет платного аккаунта разработчика Apple, поэтому приложение не нотаризовано и macOS не пускает его с первого раза. Это делается один раз.</p>
+      <h2 id="install-h">Быстрее всего одной командой</h2>
+      <p class="intro">Открой Терминал (⌘ Пробел, «Терминал»), вставь строку и нажми Enter. Команда скачает последнюю версию в «Программы» и запустит её, без предупреждений macOS.</p>
+      <div class="cmd">
+        <pre><code id="cmd">curl -fsSL https://raw.githubusercontent.com/tairqaldy/demosufler/main/install.sh | bash</code></pre>
+        <button type="button" class="copy" data-target="cmd">Скопировать</button>
+      </div>
+      <p class="intro">Дальше demosufler сам покажет, какие разрешения нужны: камера и микрофон включаются одной кнопкой, запись экрана включается в Настройках, и после этого приложение перезапускается кнопкой на панели. Обновления приходят полоской внизу панели и ставятся в один клик.</p>
       <div class="install">
         <ol class="steps">
-          <li><span>Открой demosufler.dmg и перетащи demosufler в «Программы».</span></li>
-          <li><span>Запусти. macOS скажет, что не может проверить разработчика. Закрой это окно.</span></li>
-          <li><span>Открой «Системные настройки → Конфиденциальность и безопасность», пролистай вниз и нажми «Всё равно открыть» рядом с demosufler.</span></li>
-          <li><span>Разреши камеру и микрофон. Для записи экрана включи demosufler в «Запись экрана и системного звука» и перезапусти приложение.</span></li>
+          <li><span>Или скачай demosufler.dmg и перетащи demosufler в «Программы».</span></li>
+          <li><span>При первом запуске macOS скажет, что не может проверить разработчика: у меня нет платного аккаунта Apple. Закрой окно.</span></li>
+          <li><span>«Системные настройки → Конфиденциальность и безопасность», внизу нажми «Всё равно открыть» рядом с demosufler.</span></li>
+          <li><span>Запусти ещё раз и разреши то, что попросит панель.</span></li>
         </ol>
         <div class="aside">
-          <span class="label">Или через Терминал</span>
-          <p>Вместо шагов 2 и 3 можно выполнить одну команду:</p>
-          <pre><code>xattr -dr com.apple.quarantine /Applications/demosufler.app</code></pre>
-          <p class="note">После обновления macOS может снова спросить эти разрешения.</p>
+          <span class="label">Если что-то не так</span>
+          <p>Запись экрана включена, а приложение всё равно просит доступ: выключи и снова включи demosufler в «Запись экрана и системного звука» и перезапусти его.</p>
+          <p class="note">После обновления macOS может снова спросить разрешения: подпись у каждой версии своя.</p>
         </div>
       </div>
     </div>
@@ -546,5 +556,16 @@
   </div>
 </footer>
 
+<script>
+document.querySelectorAll('.copy').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var t = document.getElementById(b.dataset.target).textContent;
+    navigator.clipboard.writeText(t).then(function () {
+      b.textContent = 'Скопировано';
+      setTimeout(function () { b.textContent = 'Скопировать'; }, 1600);
+    });
+  });
+});
+</script>
 </body>
 </html>

@@ -34,8 +34,12 @@ enum Phase: Equatable {
 
 /// Что произойдёт по клику на строку статуса.
 enum StatusAction {
-    case screenSettings
     case reveal([URL])
+}
+
+/// Состояние системного разрешения.
+enum Access {
+    case granted, notAsked, denied
 }
 
 struct Paragraph: Identifiable {
@@ -115,7 +119,9 @@ final class AppModel: ObservableObject {
         didSet {
             defaults.set(mode.rawValue, forKey: "mode")
             say("")
-            updateDevices()
+            refreshAccess()
+            if missingAccess { openSetup() }
+            updateCamera()
         }
     }
     @Published var editing = false {
@@ -129,13 +135,21 @@ final class AppModel: ObservableObject {
     @Published var contentHeight: CGFloat = 0 { didSet { updateMaxOffset() } }
     @Published var update: UpdateState = .none
 
+    // Разрешения macOS и экран настройки.
+    @Published private(set) var cameraAccess: Access = .notAsked
+    @Published private(set) var micAccess: Access = .notAsked
+    @Published private(set) var screenAccess = false
+    @Published private(set) var screenAsked = false
+    @Published private(set) var showSetup = false
+    private var accessTimer: Timer?
+    var onboarded: Bool { defaults.bool(forKey: "onboarded") }
+
     private var countdownTimer: Timer?
     private var elapsedTimer: Timer?
     private var startedAt = Date()
     private var recordingMode: Mode = .camera
     private var currentURLs: [URL] = []
     private var screenStart: Task<Bool, Never>?
-    private var askedForScreen = false
     private var afterSave: [() -> Void] = []
 
     init() {
@@ -197,10 +211,6 @@ final class AppModel: ObservableObject {
 
     func runStatusAction() {
         switch statusAction {
-        case .screenSettings:
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(url)
-            }
         case .reveal(let urls):
             NSWorkspace.shared.activateFileViewerSelecting(urls)
         case nil:
@@ -208,15 +218,99 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: Камера, микрофон, доступ к экрану
+    // MARK: Разрешения и экран настройки
 
-    func updateDevices() {
-        AVCaptureDevice.requestAccess(for: .audio) { micOK in
-            DispatchQueue.main.async {
-                if !micOK { self.say("Микрофон не разрешён: запись будет без звука") }
-                self.updateCamera()
-                if self.mode.usesScreen { self.checkScreenAccess() }
+    /// Первый запуск: показываем настройку, если чего-то не хватает, и включаем камеру, если уже можно.
+    func start() {
+        refreshAccess()
+        if !onboarded || missingAccess { openSetup() }
+        updateCamera()
+    }
+
+    private static func access(_ type: AVMediaType) -> Access {
+        switch AVCaptureDevice.authorizationStatus(for: type) {
+        case .authorized: return .granted
+        case .notDetermined: return .notAsked
+        default: return .denied
+        }
+    }
+
+    /// Чего не хватает для выбранного режима.
+    var missingAccess: Bool {
+        (mode.usesCamera && cameraAccess != .granted) || micAccess != .granted || (mode.usesScreen && !screenAccess)
+    }
+
+    func refreshAccess() {
+        let cam = Self.access(.video)
+        let mic = Self.access(.audio)
+        let scr = CGPreflightScreenCaptureAccess()
+        let cameraJustGranted = cam == .granted && cameraAccess != .granted
+        if cam != cameraAccess { cameraAccess = cam }
+        if mic != micAccess { micAccess = mic }
+        if scr != screenAccess { screenAccess = scr }
+        if cameraJustGranted { updateCamera() }
+    }
+
+    func openSetup() {
+        if editing { editing = false }
+        showSetup = true
+        accessTimer?.invalidate()
+        // Пока экран настройки открыт, следим, что человек уже разрешил в системных окнах.
+        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.refreshAccess() }
+        RunLoop.main.add(t, forMode: .common)
+        accessTimer = t
+    }
+
+    func closeSetup() {
+        accessTimer?.invalidate()
+        accessTimer = nil
+        showSetup = false
+        defaults.set(true, forKey: "onboarded")
+        refreshAccess()
+        updateCamera()
+    }
+
+    func askCamera() {
+        switch cameraAccess {
+        case .notAsked:
+            AVCaptureDevice.requestAccess(for: .video) { _ in
+                DispatchQueue.main.async {
+                    self.refreshAccess()
+                    // Сразу следом спрашиваем микрофон: один клик вместо двух.
+                    if self.micAccess == .notAsked { self.askMic() }
+                }
             }
+        case .denied: openPrivacySettings("Privacy_Camera")
+        case .granted: break
+        }
+    }
+
+    func askMic() {
+        switch micAccess {
+        case .notAsked:
+            AVCaptureDevice.requestAccess(for: .audio) { _ in
+                DispatchQueue.main.async { self.refreshAccess() }
+            }
+        case .denied: openPrivacySettings("Privacy_Microphone")
+        case .granted: break
+        }
+    }
+
+    /// Запись экрана включается только вручную в настройках, и после этого нужен перезапуск.
+    func askScreen() {
+        screenAsked = true
+        CGRequestScreenCaptureAccess()
+        openPrivacySettings("Privacy_ScreenCapture")
+    }
+
+    func relaunch() {
+        camera.stop()
+        Updater.relaunch()
+    }
+
+    private func openPrivacySettings(_ anchor: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
+            NSWorkspace.shared.open(url)
         }
     }
 
@@ -226,36 +320,16 @@ final class AppModel: ObservableObject {
             cameraReady = false
             return
         }
-        AVCaptureDevice.requestAccess(for: .video) { ok in
-            DispatchQueue.main.async {
-                guard ok else {
-                    self.say("Нет доступа к камере. Настройки → Конфиденциальность → Камера")
-                    return
-                }
-                self.camera.start { error in
-                    if let error {
-                        self.say(error.localizedDescription)
-                    } else if self.mode.usesCamera {
-                        self.cameraReady = true
-                    } else {
-                        self.camera.stop()
-                    }
-                }
+        guard cameraAccess == .granted, !cameraReady else { return }
+        camera.start { error in
+            if let error {
+                self.say(error.localizedDescription)
+            } else if self.mode.usesCamera {
+                self.cameraReady = true
+            } else {
+                self.camera.stop()
             }
         }
-    }
-
-    @discardableResult
-    private func checkScreenAccess() -> Bool {
-        if CGPreflightScreenCaptureAccess() { return true }
-        // Системное окно с просьбой показываем один раз за запуск, дальше ведём в настройки.
-        if !askedForScreen {
-            askedForScreen = true
-            CGRequestScreenCaptureAccess()
-        }
-        say("Нет доступа к записи экрана. Открой настройки, включи demosufler заново и перезапусти",
-            action: .screenSettings)
-        return false
     }
 
     // MARK: Запись
@@ -271,11 +345,15 @@ final class AppModel: ObservableObject {
 
     private func beginCountdown() {
         if case .installing = update { return }
+        refreshAccess()
+        if (mode.usesCamera && cameraAccess != .granted) || (mode.usesScreen && !screenAccess) {
+            openSetup()
+            return
+        }
         if mode.usesCamera && !cameraReady {
             say("Камера ещё не готова")
             return
         }
-        if mode.usesScreen && !checkScreenAccess() { return }
         editing = false
         say("")
         scroller.pause()
