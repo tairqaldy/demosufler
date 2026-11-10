@@ -57,9 +57,29 @@ enum Updater {
 
     /// Возвращает описание обновления, если в последнем релизе версия новее текущей.
     static func check() async -> UpdateInfo? {
-        var request = URLRequest(url: feedOverride ?? Config.latestReleaseAPI,
-                                 cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        if let feed = feedOverride { return await checkFeed(feed) }
+
+        // Ask the releases page, not the GitHub API. The page "releases/latest" redirects to the
+        // page of the newest release, and its address ends with the version tag. The API would
+        // tell the same, but it allows only 60 anonymous requests an hour per network address:
+        // on a shared network (a campus, an office) that runs out and updates silently stop.
+        var request = URLRequest(url: Config.releasesPage, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
+        request.httpMethod = "HEAD"
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let landed = response.url, landed.scheme == "https", landed.host == "github.com",
+              let marker = landed.path.range(of: "/\(Config.repo)/releases/tag/")
+        else { return nil }
+        let tag = String(landed.path[marker.upperBound...])
+        guard !tag.isEmpty, !tag.contains("/"), isNewer(tag, than: currentVersion),
+              let encoded = tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let zipURL = URL(string: "https://github.com/\(Config.repo)/releases/download/\(encoded)/\(Config.zipAssetName)")
+        else { return nil }
+        return UpdateInfo(version: String(tag.drop(while: { !$0.isNumber })), zipURL: zipURL, pageURL: Config.releasesPage)
+    }
+
+    /// The test feed: a JSON file shaped like the GitHub API answer for a release.
+    private static func checkFeed(_ feed: URL) async -> UpdateInfo? {
+        let request = URLRequest(url: feed, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 15)
         guard let (data, _) = try? await URLSession.shared.data(for: request),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tag = json["tag_name"] as? String,
@@ -69,13 +89,7 @@ enum Updater {
               let link = asset["browser_download_url"] as? String,
               let zipURL = URL(string: link)
         else { return nil }
-
-        // Скачиваем только с GitHub (кроме проверочной ленты).
-        if feedOverride == nil {
-            guard zipURL.scheme == "https", zipURL.host == "github.com" else { return nil }
-        }
-        let version = String(tag.drop(while: { !$0.isNumber }))
-        return UpdateInfo(version: version, zipURL: zipURL, pageURL: Config.releasesPage)
+        return UpdateInfo(version: String(tag.drop(while: { !$0.isNumber })), zipURL: zipURL, pageURL: Config.releasesPage)
     }
 
     /// Скачивает архив, проверяет его и кладёт новую версию на место текущей.
