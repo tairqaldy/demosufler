@@ -46,9 +46,20 @@ Or by hand:
 ### Launch mode
 
 Record the screen as usual. When you press Stop the app renders an `.mp4` by itself: the recording sits
-on a clean background with rounded corners and a shadow, the view zooms in on your clicks and follows
-the pointer, every click leaves a ripple, and the camera can sit in the corner as a round bubble. The
-raw files stay next to the result.
+on a clean background with rounded corners and a shadow, every click leaves a ripple, and the camera can
+sit in the corner as a round bubble. The raw files stay next to the result.
+
+The camera work follows what you do, not where the pointer happens to be:
+
+- The whole screen is the default. The view moves in only for an action: a click or a drag.
+- Clicks close together in time and place become one shot, framed so that all of them are visible.
+- During a shot the view does not chase the pointer. It follows it only while you drag something.
+- A moment after the last action, or as soon as the pointer leaves the picture, the view goes back to
+  the whole screen. Going straight to a distant area, it pulls back on the way.
+- Quick clicks all over the screen are shown on the whole screen, and the view moves in again where you
+  settle.
+
+`./build/demosufler-dev --plan <track.json> <seconds>` prints the shots for a pointer track.
 
 ### Sound
 

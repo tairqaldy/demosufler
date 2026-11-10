@@ -10,8 +10,9 @@ import AppKit
 ///            [--bitrate 12000000] [--voice <json>] [--camera <mov>] [--camera-offset <s>]
 ///   --selftest <folder>                    record the screen for a few seconds, render, check
 ///   --check-dark <file>                    list stretches of pure black frames
+///   --plan <track.json> <seconds>          print the camera moves for a pointer track
 enum Tools {
-    static let commands: Set<String> = ["--probe", "--frame", "--render", "--selftest", "--check-dark"]
+    static let commands: Set<String> = ["--probe", "--frame", "--render", "--selftest", "--check-dark", "--plan"]
 
     private struct VoiceClip: Decodable {
         var file: String
@@ -63,6 +64,24 @@ enum Tools {
                 }
                 print(String(format: "rendered in %.1fs", Date().timeIntervalSince(started)))
                 print(await MediaTools.describe(URL(fileURLWithPath: out)))
+                return 0
+
+            case "--plan":
+                // Prints what the camera would do for a pointer track, without rendering anything.
+                guard args.count > 2, let length = Double(args[2]) else { return usage() }
+                let track = try JSONDecoder().decode(CursorTrack.self, from: Data(contentsOf: URL(fileURLWithPath: args[1])))
+                let maxZoom = LaunchOptions().maxZoom
+                for shot in CameraPath.shots(for: track, duration: length, maxZoom: maxZoom) {
+                    print(String(format: "shot %.2f–%.2fs  zoom %.2f  centre %.2f,%.2f  clicks %d",
+                                 shot.start, shot.end, shot.scale, shot.cx, shot.cy, shot.clicks.count))
+                }
+                let fps = 30.0
+                let path = CameraPath.make(track: track, duration: length, frames: Int(length * fps), fps: fps, maxZoom: maxZoom)
+                var line = ""
+                for i in stride(from: 0, to: path.zoom.count, by: Int(fps / 2)) {
+                    line += String(format: "%.1fs:%.2f@%.2f,%.2f  ", Double(i) / fps, path.zoom[i], path.fx[i], path.fy[i])
+                }
+                print(line)
                 return 0
 
             case "--check-dark":

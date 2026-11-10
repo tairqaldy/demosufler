@@ -19,6 +19,12 @@ struct ZoomSegment: Codable {
     var y: Double?
 }
 
+/// The mouse button held down while the pointer moves (a slider, a selection, a window).
+struct DragSpan: Codable {
+    var start: Double
+    var end: Double
+}
+
 /// A title shown under the recording from `t` until the next caption.
 struct Caption: Codable {
     var t: Double
@@ -36,6 +42,8 @@ struct CursorTrack: Codable {
     var zooms: [ZoomSegment]?
     /// Titles under the recording (used by the product video).
     var captions: [Caption]?
+    /// Drags. During a drag the camera follows the pointer; a plain click only marks a spot.
+    var drags: [DragSpan]?
 
     func position(at t: Double) -> CursorSample? {
         guard let first = samples.first else { return clicks.last { $0.t <= t } ?? clicks.first }
@@ -60,6 +68,9 @@ final class CursorTracker {
     private var samples: [CursorSample] = []
     private var clicks: [CursorSample] = []
     private var wasDown = false
+    private var drags: [DragSpan] = []
+    private var pressed: CursorSample?
+    private var travelled = 0.0
 
     /// `displayFrame` is the recorded display in AppKit screen coordinates.
     func start(displayFrame: CGRect) {
@@ -68,6 +79,8 @@ final class CursorTracker {
         samples = []
         clicks = []
         wasDown = false
+        drags = []
+        pressed = nil
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
@@ -86,6 +99,18 @@ final class CursorTracker {
         // A click counts only when it lands on the recorded display.
         if down && !wasDown && (0...1).contains(sample.x) && (0...1).contains(sample.y) {
             clicks.append(sample)
+            pressed = sample
+            travelled = 0
+        }
+        if down, let from = pressed {
+            travelled = max(travelled, hypot(sample.x - from.x, sample.y - from.y))
+        }
+        if !down, wasDown, let from = pressed {
+            // Held for a while and moved: that was a drag, not a click.
+            if sample.t - from.t > 0.25, travelled > 0.012 {
+                drags.append(DragSpan(start: from.t, end: sample.t))
+            }
+            pressed = nil
         }
         wasDown = down
     }
@@ -104,7 +129,12 @@ final class CursorTracker {
                 return t >= 0 ? CursorSample(t: t, x: s.x, y: s.y) : nil
             }
         }
-        return CursorTrack(samples: shifted(samples), clicks: shifted(clicks))
+        var track = CursorTrack(samples: shifted(samples), clicks: shifted(clicks))
+        track.drags = drags.compactMap { drag in
+            let end = drag.end - videoStart
+            return end > 0 ? DragSpan(start: max(0, drag.start - videoStart), end: end) : nil
+        }
+        return track
     }
 
     func cancel() {

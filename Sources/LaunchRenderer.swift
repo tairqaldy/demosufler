@@ -21,36 +21,124 @@ struct LaunchOptions {
 
 // MARK: - Camera path (zoom and focus for every frame)
 
+/// One move of the camera towards an area where something is being done.
+struct Shot {
+    var start: Double
+    var end: Double
+    var scale: Double
+    /// Centre of the area, 0…1 with the origin in the top left corner.
+    var cx: Double
+    var cy: Double
+    var clicks: [CursorSample]
+}
+
+/// Decides, for every frame, how far the camera is zoomed in and what it looks at.
+///
+/// The rules, in the order they matter:
+///  - The whole screen is the default. The camera only moves in where there is an action:
+///    a click or a drag. Moving the pointer around without clicking never moves the camera.
+///  - Clicks close in time and place make one shot, framed so that all of them are visible.
+///    Clicks spread over most of the screen get no zoom at all: the full screen shows them best.
+///  - During a shot the camera does not chase the pointer. It leans towards the latest click
+///    and follows the pointer only while something is being dragged.
+///  - The shot ends a moment after the last action, or as soon as the pointer leaves the
+///    picture, and the camera goes back to the whole screen.
+///  - Going from one area straight to a distant one, the camera pulls back on the way.
+///  - The video opens and closes on the whole screen.
 struct CameraPath {
     var zoom: [Double]
     var fx: [Double]
     var fy: [Double]
 
-    /// Zooms derived from clicks: clicks close in time share one zoom.
-    static func segments(for track: CursorTrack, duration: Double, maxZoom: Double) -> [ZoomSegment] {
-        if let explicit = track.zooms { return explicit }
-        var result: [ZoomSegment] = []
-        var first: Double?
-        var last = 0.0
-        func close() {
-            guard let f = first else { return }
-            result.append(ZoomSegment(start: max(0, f - 0.6), end: last + 1.6, scale: maxZoom))
+    static let opening = 0.8        // the first moments always show the whole screen
+    static let preRoll = 0.5        // start moving in this long before the first click
+    static let hold = 1.25          // stay this long after the last action
+    static let joinTime = 2.4       // clicks further apart in time start a new shot
+    static let joinDistance = 0.26  // clicks further apart on screen start a new shot
+    static let shortest = 1.3       // a shot shorter than this is a twitch, not a shot
+
+    static func shots(for track: CursorTrack, duration: Double, maxZoom: Double) -> [Shot] {
+        let drags = track.drags ?? []
+        /// When the action that began with this click is over (later than the click for a drag).
+        func finish(_ click: CursorSample) -> Double {
+            drags.first { abs($0.start - click.t) < 0.08 }?.end ?? click.t
         }
+
+        // Group the clicks.
+        var groups: [[CursorSample]] = []
+        var groupEnd = 0.0
         for click in track.clicks.sorted(by: { $0.t < $1.t }) {
-            if first != nil, click.t - last < 3.2 {
-                last = click.t
-            } else {
-                close()
-                first = click.t
-                last = click.t
+            if let group = groups.last {
+                let cx = group.map(\.x).reduce(0, +) / Double(group.count)
+                let cy = group.map(\.y).reduce(0, +) / Double(group.count)
+                let near = hypot(click.x - cx, click.y - cy) <= joinDistance
+                if near, click.t - groupEnd < joinTime {
+                    groups[groups.count - 1].append(click)
+                    groupEnd = max(groupEnd, finish(click))
+                    continue
+                }
             }
+            groups.append([click])
+            groupEnd = finish(click)
         }
-        close()
-        return result
+
+        var result: [Shot] = []
+        for group in groups {
+            guard let first = group.first else { continue }
+            let xs = group.map(\.x), ys = group.map(\.y)
+            let minX = xs.min() ?? 0, maxX = xs.max() ?? 0, minY = ys.min() ?? 0, maxY = ys.max() ?? 0
+            let spread = max(maxX - minX, maxY - minY)
+            // The picture has to hold every click of the group with room around them.
+            let scale = min(maxZoom, 1 / (spread + 0.34))
+            guard scale >= 1.15 else { continue }
+            let lastAction = group.map(finish).max() ?? first.t
+            var shot = Shot(start: max(opening, first.t - preRoll), end: min(lastAction + hold, duration - 0.7),
+                            scale: scale, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, clicks: group)
+
+            // The pointer left the picture after the last action: let go and show the whole screen.
+            // (After a drag the camera sits where the drag ended, so measure from there.)
+            let half = 0.5 / scale
+            let endedWithDrag = drags.contains { abs($0.end - lastAction) < 0.01 }
+            let rest = endedWithDrag ? track.position(at: lastAction) : nil
+            let restX = rest?.x ?? shot.cx, restY = rest?.y ?? shot.cy
+            if let gone = track.samples.first(where: {
+                $0.t > lastAction + 0.25 && $0.t < shot.end
+                    && (abs($0.x - restX) > half || abs($0.y - restY) > half)
+            }) {
+                shot.end = gone.t
+            }
+
+            guard shot.end > shot.start else { continue }
+            result.append(shot)
+        }
+
+        // Shots may overlap when a click far away follows soon after another. Cut between them,
+        // and drop any shot that ends up too short to read: quick clicks all over the screen are
+        // shown best by the whole screen, and the camera moves in again where the person settles.
+        var candidates = result
+        while true {
+            var cut = candidates
+            for i in cut.indices.dropFirst() where cut[i].start < cut[i - 1].end {
+                let previousLast = cut[i - 1].clicks.map(finish).max() ?? cut[i - 1].start
+                let firstClick = cut[i].clicks[0].t
+                let at = min(max((previousLast + firstClick) / 2, previousLast + 0.15), max(previousLast + 0.15, firstClick - 0.15))
+                cut[i - 1].end = at
+                cut[i].start = at
+            }
+            guard let weakest = cut.indices.min(by: { cut[$0].end - cut[$0].start < cut[$1].end - cut[$1].start }),
+                  cut[weakest].end - cut[weakest].start < shortest else {
+                return cut
+            }
+            candidates.remove(at: weakest)
+        }
     }
 
     static func make(track: CursorTrack, duration: Double, frames: Int, fps: Double, maxZoom: Double) -> CameraPath {
-        let segments = Self.segments(for: track, duration: duration, maxZoom: maxZoom)
+        if let explicit = track.zooms {
+            return scripted(track: track, segments: explicit, duration: duration, frames: frames, fps: fps)
+        }
+        let shots = Self.shots(for: track, duration: duration, maxZoom: maxZoom)
+        let drags = track.drags ?? []
         var path = CameraPath(zoom: [], fx: [], fy: [])
         path.zoom.reserveCapacity(frames)
         path.fx.reserveCapacity(frames)
@@ -63,13 +151,74 @@ struct CameraPath {
         var x1 = 0.5, x2 = 0.5, y1 = 0.5, y2 = 0.5
         var tx = 0.5, ty = 0.5
         var active = -1
+        var changedAt = -10.0
+        var jump = 0.0
+        var dragging = false
 
         for i in 0..<frames {
             let t = Double(i) * dt
             var targetZoom = 1.0
-            // Always end the video zoomed out.
-            if t < duration - 0.7,
-               let index = segments.firstIndex(where: { t >= $0.start && t < $0.end }) {
+            if let index = shots.firstIndex(where: { t >= $0.start && t < $0.end }) {
+                let shot = shots[index]
+                targetZoom = shot.scale
+                if index != active {
+                    if active >= 0 {
+                        jump = hypot(shot.cx - shots[active].cx, shot.cy - shots[active].cy)
+                        changedAt = t
+                    }
+                    active = index
+                    dragging = false
+                }
+                if drags.contains(where: { t >= $0.start && t <= $0.end + 0.15 }), let c = track.position(at: t) {
+                    // Something is being dragged: keep the pointer inside the middle of the picture.
+                    if !dragging { dragging = true; tx = x2; ty = y2 }
+                    let dead = 0.5 / targetZoom * 0.45
+                    if c.x > tx + dead { tx = c.x - dead } else if c.x < tx - dead { tx = c.x + dead }
+                    if c.y > ty + dead { ty = c.y - dead } else if c.y < ty - dead { ty = c.y + dead }
+                } else {
+                    let current = shot.clicks.last(where: { $0.t <= t + 0.35 }) ?? shot.clicks[0]
+                    // After a drag the camera stays where the drag ended, until the next plain click.
+                    if dragging, !drags.contains(where: { abs($0.start - current.t) < 0.08 }) { dragging = false }
+                    if !dragging {
+                        // Lean towards the click that is happening, without leaving the framed area.
+                        tx = shot.cx + (current.x - shot.cx) * 0.55
+                        ty = shot.cy + (current.y - shot.cy) * 0.55
+                    }
+                }
+                // Starting from the whole screen: place the focus at once, nobody can see it move.
+                if z2 < 1.03 { x1 = tx; x2 = tx; y1 = ty; y2 = ty }
+                // On the way to a distant area, pull back first.
+                if t - changedAt < 0.5, jump > 0.3 { targetZoom = min(targetZoom, 1.2) }
+            } else {
+                active = -1
+                dragging = false
+            }
+            z1 += (targetZoom - z1) * k; z2 += (z1 - z2) * k
+            x1 += (tx - x1) * k; x2 += (x1 - x2) * k
+            y1 += (ty - y1) * k; y2 += (y1 - y2) * k
+            path.zoom.append(z2)
+            path.fx.append(x2)
+            path.fy.append(y2)
+        }
+        return path
+    }
+
+    /// Zooms given explicitly (the scripted product video): a fixed point, or the pointer when
+    /// the segment has no point.
+    private static func scripted(track: CursorTrack, segments: [ZoomSegment], duration: Double,
+                                 frames: Int, fps: Double) -> CameraPath {
+        var path = CameraPath(zoom: [], fx: [], fy: [])
+        let dt = 1 / fps
+        let k = 1 - exp(-dt / 0.15)
+        var z1 = 1.0, z2 = 1.0
+        var x1 = 0.5, x2 = 0.5, y1 = 0.5, y2 = 0.5
+        var tx = 0.5, ty = 0.5
+        var active = -1
+
+        for i in 0..<frames {
+            let t = Double(i) * dt
+            var targetZoom = 1.0
+            if t < duration - 0.7, let index = segments.firstIndex(where: { t >= $0.start && t < $0.end }) {
                 let seg = segments[index]
                 targetZoom = max(1, seg.scale)
                 if index != active {
@@ -79,11 +228,9 @@ struct CameraPath {
                     } else if let c = track.clicks.first(where: { $0.t >= seg.start }) ?? track.position(at: t) {
                         tx = c.x; ty = c.y
                     }
-                    // Starting from the full view: jump the focus, nobody can see it move.
                     if z2 < 1.03 { x1 = tx; x2 = tx; y1 = ty; y2 = ty }
                 }
                 if seg.x == nil, let c = track.position(at: t) {
-                    // Follow the pointer only when it leaves the middle of the zoomed view.
                     let dead = 0.5 / targetZoom * 0.5
                     if c.x > tx + dead { tx = c.x - dead } else if c.x < tx - dead { tx = c.x + dead }
                     if c.y > ty + dead { ty = c.y - dead } else if c.y < ty - dead { ty = c.y + dead }
